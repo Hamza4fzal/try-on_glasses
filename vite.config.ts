@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => ({
     sourcemap: true,
     rollupOptions: {
       input: {
+        index: resolve(__dirname, 'index.html'),
         tracking: resolve(__dirname, 'demo/tracking.html'),
       },
     },
