@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "postinstall": "node tools/vendor-mediapipe.mjs",
     "vendor": "node tools/vendor-mediapipe.mjs",
+    "canonical-face": "node tools/build-canonical-face.mjs",
     "models": "node tools/generate-models.mjs"
   },
   "dependencies": {
