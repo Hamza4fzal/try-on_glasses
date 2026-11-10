@@ -21,7 +21,7 @@ const btnStop = $<HTMLButtonElement>('stop');
 const d = params.get('delegate');
 
 const engine = new TryOnEngine($<HTMLCanvasElement>('gl'), {
-  assetBase: new URL('../', import.meta.url).href, // site root (see demo/tracking.ts)
+  assetBase: new URL('../', location.href).href, // site root (see demo/tracking.ts)
   quality,
   delegate: d === 'CPU' || d === 'GPU' ? d : 'auto',
   preserveDrawingBuffer: params.has('capture'),
