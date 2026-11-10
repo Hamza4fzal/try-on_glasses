@@ -90,6 +90,7 @@ export class GlassesModel {
     readonly meta: VtoModelMeta,
     variants: string[],
     readonly quality: RenderQuality,
+    private readonly sceneUnitsPerMetre = 100,
   ) {
     this.variants = variants;
     root.traverse((o) => {
@@ -113,7 +114,11 @@ export class GlassesModel {
     this.bounds.setFromObject(root, true);
   }
 
-  static async load(url: string, quality: RenderQuality = 'high'): Promise<GlassesModel> {
+  /**
+   * @param sceneUnitsPerMetre scene length units per metre (the try-on scene is in cm → 100).
+   *   Needed because glTF's KHR_materials_volume attenuationDistance is in world units.
+   */
+  static async load(url: string, quality: RenderQuality = 'high', sceneUnitsPerMetre = 100): Promise<GlassesModel> {
     const gltf = await new GLTFLoader().loadAsync(url);
     let meta: VtoModelMeta = {};
     gltf.scene.traverse((o) => {
@@ -121,7 +126,7 @@ export class GlassesModel {
     });
     const vext = gltf.userData?.gltfExtensions?.KHR_materials_variants as { variants?: { name: string }[] } | undefined;
     const variants = (vext?.variants ?? []).map((v) => v.name);
-    const model = new GlassesModel(gltf.scene, gltf.parser, meta, variants, quality);
+    const model = new GlassesModel(gltf.scene, gltf.parser, meta, variants, quality, sceneUnitsPerMetre);
     if (variants.length) await model.setVariant(variants[0]);
     return model;
   }
@@ -201,16 +206,21 @@ export class GlassesModel {
     this.ownedMaterials.add(mat);
     if (this.processed.has(mat)) return;
     this.processed.add(mat);
-    prepareMaterial(mat, this.quality);
+    prepareMaterial(mat, this.quality, this.sceneUnitsPerMetre);
   }
 }
 
 /**
- * Low quality: physically based transmission (an extra scene render per frame) is replaced by
+ * Unit conversion (see load), then for low quality: physically based transmission (an extra scene render per frame) is replaced by
  * alpha blending with the same perceived tint. High quality keeps glTF materials as authored.
  */
-function prepareMaterial(mat: Material, quality: RenderQuality): void {
+function prepareMaterial(mat: Material, quality: RenderQuality, sceneUnitsPerMetre: number): void {
   const phys = mat as MeshPhysicalMaterial;
+  // glTF attenuationDistance is in world units (metres for a model at unit scale); our scene is
+  // in cm and the model is scaled into it, so convert. (thickness is local-space: no change.)
+  if (phys.isMeshPhysicalMaterial && Number.isFinite(phys.attenuationDistance)) {
+    phys.attenuationDistance *= sceneUnitsPerMetre;
+  }
   if (quality === 'low' && phys.isMeshPhysicalMaterial && phys.transmission > 0) {
     const lum = 0.2126 * phys.color.r + 0.7152 * phys.color.g + 0.0722 * phys.color.b;
     const see = phys.transmission * (phys.map ? 0.6 : lum);

@@ -84,7 +84,10 @@ const LIBRARY = {
     extensions: {
       KHR_materials_ior: { ior: 1.5 },
       KHR_materials_transmission: { transmissionFactor: 1 },
-      KHR_materials_iridescence: { iridescenceFactor: 1, iridescenceIor: 2.0, iridescenceThicknessMaximum: 520 },
+      // High-index film (n = 2.0 on a 1.5 lens: half-wave phase shift at the top surface only), so
+      // reflection peaks where 2·n·d = (m − ½)·λ. d = 176 nm → m = 2 at λ ≈ 470 nm (blue), other
+      // orders fall in the IR/UV → a clean blue mirror.
+      KHR_materials_iridescence: { iridescenceFactor: 1, iridescenceIor: 2.0, iridescenceThicknessMaximum: 176 },
     },
   }),
 };

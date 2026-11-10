@@ -12,24 +12,34 @@ at runtime.
 
 ```bash
 npm install          # also vendors MediaPipe wasm + model into public/mediapipe (sha256-verified)
-npm run dev          # http://localhost:5173/demo/tracking.html
+npm run dev          # http://localhost:5173/  → links to the three labs
 npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-signed certificate)
 ```
+
+| Page | What it is |
+|---|---|
+| `demo/tryon.html` | **Fitting lab**: live camera try-on, product + colour pickers, calibration sliders, debug overlays, calibration JSON export |
+| `demo/viewer.html` | **3D fit preview**: the glasses on MediaPipe's canonical head from any angle, no camera needed |
+| `demo/tracking.html` | **Tracking lab**: landmarks, solved pose, jitter HUD |
 
 | Command | What it does |
 |---|---|
 | `npm run typecheck` | TypeScript strict check |
 | `npm run build` | Production build into `dist/` |
+| `npm run test` | Both test suites below |
 | `npm run test:tracking` | Headless-Chrome tracking benchmark + page smoke test (uses installed Chrome; `CHROME_PATH` overrides) |
 | `npm run test:tracking:sweep` | Prints filter-parameter trade-off tables (used to tune smoothing) |
+| `npm run test:render` | Model validation, glasses fit on a real face photo, variants, GPU-leak and camera-stop checks |
+| `npm run models` | Regenerates the dev glasses models (`public/models/*.glb`) |
+| `npm run shots` | Multi-angle screenshots of every model on the reference head → `test-output/shots/` |
 
 ## Status
 
 | Phase | State |
 |---|---|
 | 1. Project setup (standalone) | ✅ |
-| 2. Tracking engine + tracking lab | ✅ automated tests pass. **Needs a live-webcam check of yaw/pitch** |
-| 3. 3D rendering engine, GLB glasses, calibration | next |
+| 2. Tracking engine + tracking lab | ✅ automated tests pass; live webcam check done |
+| 3. 3D rendering engine, GLB glasses, calibration | ✅ automated tests pass. **Needs a live-webcam look** |
 | 4. WordPress plugin | after you approve the standalone app |
 | 5. Occlusion, materials, photo capture | |
 | 6. Performance, device testing, production build | |
@@ -71,6 +81,68 @@ Query params: `?delegate=CPU` or `?delegate=GPU` forces the inference backend (d
 **Mirroring:** all math runs on the unmirrored frame. The selfie preview is mirrored only at display
 time with CSS, applied to video and overlay together.
 
+## 3D rendering (`src/render`, `src/product`)
+
+- **One WebGL canvas** shows both the camera image and the glasses. The virtual camera is identical
+  to MediaPipe's, so the tracked face matrix is used directly. The video frame is uploaded in the
+  same callback that produced the pose, so image and glasses never drift apart. "Cover" cropping
+  uses a view offset, so only visible pixels are rendered. Lens transmission refracts the real image.
+- **GlassesModel** loads a GLB built to [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md). It switches
+  colourways (KHR_materials_variants), applies per-product material overrides, and has a cheaper
+  no-transmission mode (`?quality=low`). It frees every GPU resource on dispose.
+- **GlassesRig** places the frame:
+
+  ```
+  camera ← F(face) · T(nose rest) · S(1/k) · T(offset) · R(tilt/yaw/roll) · S(scale)
+  ```
+
+  `k` is the wearer's iris-measured real size, so frames keep their true size on every face.
+  Temples are aimed at the ear rests of a canonical head model, and tilt and scale are
+  compensated automatically.
+- **FaceOccluder** is invisible, depth-only geometry for the face, skull and ears. It hides temple
+  parts that pass behind the head.
+- **LightEstimator** follows the room's brightness using a tiny local downsample of the camera
+  image, so the glasses don't glow in a dark room.
+- **Product catalogue** (`public/products/products.json`, stand-in for WooCommerce meta) holds the
+  model URL, colourways and calibration. Every value is sanitised and clamped on load.
+
+### Dev models (`npm run models`)
+
+Generated parametrically at true size as real glTF files. They are stand-ins until production
+Blender models exist.
+
+| Model | Style | Size | Colourways |
+|---|---|---|---|
+| Aria | soft-square acetate, rivets | 52□18-145 | havana, black, crystal, honey |
+| Mira | cat-eye acetate | 51□19-140 | black, rose crystal, havana |
+| Orbit | round metal panto, nose pads | 49□21-145 | gold, silver, gunmetal, matte black |
+| Pilot | aviator sunglasses, double bridge | 58□14-140 | gold/G-15, silver/gradient, gunmetal/blue mirror |
+
+Every model has these parts:
+
+- **Front:** an SDF-grown acetate front or swept wire rims, with polished rounded edges, base
+  curve, wrap and pantoscopic tilt.
+- **Lenses:** separate lens meshes.
+- **Temples:** pivoted at the hinges.
+- **Hardware:** barrel hinges with screws, plus nose pads on arms for the metal frames.
+
+Every file passes the Khronos validator.
+
+### Render test results (headless Chrome, real face photo)
+
+| Model | Lens centre below pupil | Lens centre outside pupil | Temple spread / droop |
+|---|---|---|---|
+| Aria | 7.5 % | 5.8 % | 7.3° / 5.7° |
+| Mira | 6.8 % | 6.0 % | 6.3° / 6.4° |
+| Orbit | 4.5 % | 6.0 % | 8.2° / 2.0° |
+| Pilot | 8.3 % | 7.3 % | 6.1° / 6.8° |
+
+Percentages are of the eye-corner span (1 % ≈ 0.9 mm). On top of these measurements:
+
+- The nose rest sits within 0.2 % of the tracked bridge.
+- There is no GPU memory growth over repeated product switches.
+- All camera tracks stop.
+
 ## Benchmark results (headless Chrome, CPU delegate, 1280×720)
 
 The face photo is moved along scripted paths, with webcam-like noise injected
@@ -97,11 +169,15 @@ live in the tracking lab.
 ```
 src/camera/      camera access, errors, switching
 src/tracking/    FaceTracker, CameraModel, PoseSolver, TrueSizeEstimator, TrackingLoop, canonical face data
+src/render/      renderer, GLB model + variants, face rig, occluder, light estimation
+src/product/     catalogue types, calibration, sanitising
 src/debug/       debug overlay + HUD
 src/utils/       One-Euro filters
-demo/            tracking lab page
-tests/           benchmark harness + headless runner
-tools/           MediaPipe vendoring, canonical face model converter
+demo/            fitting lab, 3D fit preview, tracking lab
+public/models/   generated dev GLBs        public/products/  catalogue JSON
+docs/            MODEL_SPEC.md (GLB contract for real models)
+tests/           tracking benchmark, render tests, screenshot tool
+tools/           MediaPipe vendoring, canonical face converter, parametric glasses generator
 ```
 
 The canonical face model (`tools/data/canonical_face_model.obj`, generated
