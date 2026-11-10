@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VTO — Tracking lab</title>
+    <style>
+      :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      html, body { margin: 0; height: 100%; background: #0b0b0c; color: #e7e5e4; }
+      .stage { position: fixed; inset: 0; overflow: hidden; background: #000; }
+      .stage video, .stage canvas {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; /* the overlay canvas has the same pixel grid as the video → identical crop */
+      }
+      .stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
+      .hud {
+        position: fixed; left: 12px; top: calc(12px + env(safe-area-inset-top, 0px)); margin: 0;
+        padding: 10px 12px; max-width: calc(100vw - 48px); overflow: auto;
+        font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: rgba(0,0,0,0.6); border-radius: 8px; white-space: pre; pointer-events: none;
+      }
+      .bar {
+        position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+      }
+      button {
+        font: 500 13px/1 inherit; letter-spacing: 0.04em; padding: 12px 16px; border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.25); background: rgba(20,20,20,0.75); color: #fafaf9; cursor: pointer;
+      }
+      button:disabled { opacity: 0.4; cursor: default; }
+      .status { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <div class="stage mirror" id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <pre class="hud" id="hud"></pre>
+    <div class="status" id="status">Tracking lab — press Start camera</div>
+    <div class="bar">
+      <button id="start">Start camera</button>
+      <button id="switch" disabled>Switch camera</button>
+      <button id="mesh" disabled>Toggle mesh</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <script type="module" src="./tracking.ts"></script>
+  </body>
+</html>
