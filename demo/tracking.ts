@@ -51,9 +51,11 @@ btnStart.addEventListener('click', async () => {
     stage.classList.toggle('mirror', camera.shouldMirror);
     if (!tracker.ready) {
       status.textContent = 'Loading face tracking…';
+      const d = new URLSearchParams(location.search).get('delegate');
       await tracker.init({
         wasmBaseUrl: `${base}mediapipe/wasm`,
         modelUrl: `${base}mediapipe/face_landmarker.task`,
+        delegate: d === 'CPU' || d === 'GPU' ? d : 'auto',
       });
     }
     loop.start();

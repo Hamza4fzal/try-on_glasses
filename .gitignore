@@ -4,3 +4,4 @@ dist/
 .vite/
 # Vendored at install time by `npm run vendor` (reproducible from node_modules + pinned model URL)
 public/mediapipe/
+test-assets/
