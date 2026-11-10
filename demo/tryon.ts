@@ -1,49 +1,36 @@
 /**
- * Phase 3 fitting lab: live camera → tracking → 3D glasses (WebGL) with per-product calibration.
- * This is the developer/admin tool; the customer-facing modal comes in Phase 5.
+ * Fitting lab: live camera → tracking → 3D glasses (WebGL) with per-product calibration and
+ * debug views. The developer/admin tool; customers use the try-on modal (demo/shop.html).
  */
-import { CameraController, CameraError } from '../src/camera/camera-controller';
+import { EngineError, TryOnEngine, type OcclusionMode } from '../src/app/try-on-engine';
+import { CameraError } from '../src/camera/camera-controller';
 import { DebugOverlay } from '../src/debug/debug-overlay';
 import { loadCatalog, type ProductConfig, type ProductVariant } from '../src/product/catalog';
-import { FaceOccluder } from '../src/render/face-occluder';
-import { GlassesModel, type RenderQuality } from '../src/render/glasses-model';
-import { GlassesRig } from '../src/render/glasses-rig';
-import { LightEstimator } from '../src/render/light-estimator';
-import { TryOnRenderer } from '../src/render/try-on-renderer';
-import { FaceTracker } from '../src/tracking/face-tracker';
-import { TrackingLoop } from '../src/tracking/tracking-loop';
+import type { RenderQuality } from '../src/render/glasses-model';
 import { LabPanel } from './lab-ui';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
-const quality: RenderQuality = params.get('quality') === 'low' ? 'low' : 'high';
+const q = params.get('quality');
+const quality: RenderQuality | 'auto' = q === 'low' || q === 'high' ? q : 'high';
 const stage = $('stage');
 const status = $('status');
 const btnStart = $<HTMLButtonElement>('start');
 const btnSwitch = $<HTMLButtonElement>('switch');
 const btnStop = $<HTMLButtonElement>('stop');
+const d = params.get('delegate');
 
-const base = import.meta.env.BASE_URL;
-const camera = new CameraController($<HTMLVideoElement>('video'));
-const tracker = new FaceTracker();
-const loop = new TrackingLoop(tracker, camera.video);
-const view = new TryOnRenderer($<HTMLCanvasElement>('gl'), { preserveDrawingBuffer: params.has('capture') });
+const engine = new TryOnEngine($<HTMLCanvasElement>('gl'), {
+  assetBase: import.meta.env.BASE_URL,
+  quality,
+  delegate: d === 'CPU' || d === 'GPU' ? d : 'auto',
+  preserveDrawingBuffer: params.has('capture'),
+});
+const { camera, tracker, loop, view, rig, occluder, light } = engine;
 const overlay = new DebugOverlay($<HTMLCanvasElement>('overlay'), $('hud'));
 overlay.enabled = false;
 overlay.showMesh = false;
-const rig = new GlassesRig();
-const occluder = new FaceOccluder();
-const light = new LightEstimator(view);
-view.add(occluder.group);
-view.add(rig.group);
-
 const testHooks = params.has('capture');
-let model: GlassesModel | null = null;
-let loadToken = 0;
-let renderFps = 0;
-let fpsCount = 0;
-let fpsT0 = performance.now();
-let lastT = performance.now();
 
 const catalog = await loadCatalog(new URL('../products/products.json', location.href).href);
 const panel = new LabPanel(document.body, catalog, {
@@ -58,7 +45,9 @@ panel.addToggle('Debug overlay (landmarks, HUD)', false, (on) => {
 panel.addToggle('Face mesh in overlay', false, (on) => (overlay.showMesh = on));
 panel.addToggle('Glasses axes + bounding box', false, (on) => rig.setDebug(on));
 panel.addToggle('Show occluder', false, (on) => occluder.setDebug(on));
-panel.addToggle('Occlusion', true, (on) => (occluder.enabled = on));
+panel.addToggle('Live face shape (occluder)', true, (on) => (occluder.liveShape = on));
+panel.addSelect('Occlusion', ['soft', 'hard', 'off'], engine.occlusionMode, (m) => (engine.occlusionMode = m as OcclusionMode));
+panel.addToggle('Contact shadows', engine.shadows.enabled, (on) => (engine.shadows.enabled = on));
 panel.addToggle('Match room lighting', true, (on) => {
   light.enabled = on;
   if (!on) {
@@ -68,58 +57,39 @@ panel.addToggle('Match room lighting', true, (on) => {
 });
 
 async function showProduct(p: ProductConfig): Promise<void> {
-  const token = ++loadToken;
   status.textContent = `Loading ${p.name}…`;
   try {
-    const m = await GlassesModel.load(p.model, quality);
-    if (token !== loadToken) return m.dispose();
+    await engine.loadProduct(p, panel.variant?.id);
+    if (engine.product !== p) return; // superseded
     const v = panel.variant;
-    if (v) await m.setVariant(v.gltfVariant ?? null, v.materialOverrides);
-    if (token !== loadToken) return m.dispose();
-    rig.setModel(m);
-    model?.dispose();
-    model = m;
+    if (v) await engine.applyVariant(v);
     rig.setCalibration(panel.calibration);
-    const meta = m.meta;
+    const meta = engine.model?.meta ?? {};
     panel.setInfo(`${meta.title ?? p.name}\n${meta.lensWidthMm}□${meta.bridgeMm}-${meta.templeLengthMm} · frame ${meta.frameWidthMm} mm`);
     if (status.textContent?.startsWith('Loading')) status.textContent = '';
   } catch (err) {
-    if (token === loadToken) status.textContent = `Could not load ${p.name}: ${String(err)}`;
+    status.textContent = err instanceof Error ? err.message : String(err);
     console.error(err);
   }
 }
 
 async function applyVariant(v: ProductVariant): Promise<void> {
-  await model?.setVariant(v.gltfVariant ?? null, v.materialOverrides);
+  await engine.applyVariant(v);
 }
 
-loop.addListener((frame, pose, trueSize) => {
+engine.addFrameListener((frame, pose, trueSize) => {
   if (testHooks) (window as unknown as { __lastFrame: Float32Array }).__lastFrame = frame.landmarks;
-  const now = performance.now();
-  const dt = Math.min(0.1, (now - lastT) / 1000);
-  lastT = now;
-  view.setFrameSize(frame.frameWidth, frame.frameHeight);
-  rig.update(pose, trueSize.factor);
-  occluder.update(pose.faceMatrix, pose.valid);
-  light.update(camera.video, now, dt);
-  view.render();
-
-  fpsCount++;
-  if (now - fpsT0 >= 1000) {
-    renderFps = (fpsCount * 1000) / (now - fpsT0);
-    fpsCount = 0;
-    fpsT0 = now;
-  }
   if (overlay.enabled) {
     const c = rig.calibration;
     const f = rig.templeFit;
     overlay.draw(frame, pose, loop.camera, trueSize, loop.stats, {
-      renderFps,
+      renderFps: engine.renderFps,
       lines: [
-        `model ${panel.product.id}/${model?.variant ?? '-'}  kEff ${rig.kEff.toFixed(3)}  dpr ${view.pixelRatio}`,
+        `model ${panel.product.id}/${engine.model?.variant ?? '-'}  kEff ${rig.kEff.toFixed(3)}  dpr ${view.pixelRatio}  quality ${engine.quality}`,
         `calib scale ${c.scale.toFixed(3)} off [${c.offsetMm.map((v) => v.toFixed(1)).join(', ')}] mm rot [${c.rotationDeg.map((v) => v.toFixed(1)).join(', ')}]°`,
-        `temples L ${f[0].spreadDeg.toFixed(1)}°/${f[0].droopDeg.toFixed(1)}°  R ${f[1].spreadDeg.toFixed(1)}°/${f[1].droopDeg.toFixed(1)}°${f[0].clamped || f[1].clamped ? ' clamped' : ''}`,
-        `light lum ${light.sceneLuminance.toFixed(3)} env ${view.scene.environmentIntensity.toFixed(2)}  quality ${quality}`,
+        `temples L ${f[0].spreadDeg.toFixed(1)}°/${f[0].droopDeg.toFixed(1)}°  R ${f[1].spreadDeg.toFixed(1)}°/${f[1].droopDeg.toFixed(1)}°${f[0].clamped || f[1].clamped ? ' clamped' : ''}  head width ×${occluder.headWidthRatio.toFixed(3)}`,
+        `occlusion ${engine.occlusionMode}${occluder.live ? ' (live face)' : ' (rigid)'}  shadows ${engine.shadows.enabled ? 'on' : 'off'}  light lum ${light.sceneLuminance.toFixed(3)} env ${view.scene.environmentIntensity.toFixed(2)}`,
+        `guidance ${engine.guidance.hint ?? '-'}`,
       ],
     });
   }
@@ -147,26 +117,18 @@ btnStart.addEventListener('click', async () => {
   btnStart.disabled = true;
   try {
     status.textContent = 'Starting camera…';
-    await camera.start({ facingMode: 'user' });
-    stage.classList.toggle('mirror', camera.shouldMirror);
-    view.setVideo(camera.video);
-    if (!tracker.ready) {
-      status.textContent = 'Loading face tracking…';
-      const d = params.get('delegate');
-      await tracker.init({
-        wasmBaseUrl: `${base}mediapipe/wasm`,
-        modelUrl: `${base}mediapipe/face_landmarker.task`,
-        delegate: d === 'CPU' || d === 'GPU' ? d : 'auto',
-      });
-    }
-    loop.start();
+    const tracking = engine.preloadTracking();
+    await engine.startCamera();
+    stage.classList.toggle('mirror', engine.mirrored);
+    if (!tracker.ready) status.textContent = 'Loading face tracking…';
+    await tracking;
+    engine.startTracking();
     setRunning(true);
     status.textContent = '';
   } catch (err) {
-    camera.stop();
-    view.setVideo(null);
+    engine.stop();
     btnStart.disabled = false;
-    status.textContent = err instanceof CameraError ? err.message : String(err);
+    status.textContent = err instanceof CameraError || err instanceof EngineError ? err.message : String(err);
     console.error(err);
   }
 });
@@ -175,9 +137,9 @@ btnSwitch.addEventListener('click', async () => {
   loop.stop();
   try {
     await camera.switchCamera();
-    stage.classList.toggle('mirror', camera.shouldMirror);
-    loop.resetPerson();
-    loop.start();
+    stage.classList.toggle('mirror', engine.mirrored);
+    engine.resetPerson();
+    engine.startTracking();
   } catch (err) {
     status.textContent = String(err);
     setRunning(false);
@@ -185,22 +147,15 @@ btnSwitch.addEventListener('click', async () => {
 });
 
 btnStop.addEventListener('click', () => {
-  loop.stop();
-  camera.stop();
-  view.setVideo(null);
+  engine.stop();
   overlay.clear();
-  rig.group.visible = false;
-  occluder.update(rig.group.matrix, false);
-  view.render();
+  engine.renderStill();
   setRunning(false);
   status.textContent = 'Camera stopped.';
 });
 
 window.addEventListener('resize', () => view.resize());
-window.addEventListener('pagehide', () => {
-  loop.stop();
-  camera.stop();
-});
+window.addEventListener('pagehide', () => engine.stop());
 
 await showProduct(panel.product);
 status.textContent = 'Fitting lab — press Start camera';
@@ -208,6 +163,7 @@ status.textContent = 'Fitting lab — press Start camera';
 // Exposed for automated tests and console inspection.
 Object.assign(window, {
   __vto: {
+    engine,
     camera,
     tracker,
     loop,
@@ -216,7 +172,7 @@ Object.assign(window, {
     occluder,
     panel,
     get model() {
-      return model;
+      return engine.model;
     },
     async show(productId: string, variantId?: string) {
       const p = catalog.products.find((x) => x.id === productId);

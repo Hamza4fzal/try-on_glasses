@@ -176,6 +176,11 @@ export class GlassesModel {
     return this.slotMeshes.filter((s) => s.slot === slot).map((s) => s.mesh);
   }
 
+  /** Visits every mesh with its slot (its current material is `mesh.material`). */
+  forEachMesh(fn: (mesh: Mesh, slot: string) => void): void {
+    for (const s of this.slotMeshes) fn(s.mesh, s.slot);
+  }
+
   get slots(): string[] {
     return [...new Set(this.slotMeshes.map((s) => s.slot))];
   }

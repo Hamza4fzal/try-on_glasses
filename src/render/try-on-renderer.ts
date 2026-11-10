@@ -57,6 +57,13 @@ export class TryOnRenderer {
   private lost = false;
   onContextLost: (() => void) | null = null;
   onContextRestored: (() => void) | null = null;
+  /** Called after sizing, right before the main render (e.g. occlusion pre-pass). */
+  onBeforeRender: (() => void) | null = null;
+  /**
+   * Part of the camera frame that is visible in the canvas after the cover crop, in normalized
+   * frame coordinates (unmirrored): [u0, v0, u1, v1].
+   */
+  readonly visibleRect: [number, number, number, number] = [0, 0, 1, 1];
 
   constructor(
     readonly canvas: HTMLCanvasElement,
@@ -145,6 +152,11 @@ export class TryOnRenderer {
       const s = Math.max(cssW / this.frameW, cssH / this.frameH);
       const fullW = this.frameW * s, fullH = this.frameH * s;
       this.camera.setViewOffset(fullW, fullH, (fullW - cssW) / 2, (fullH - cssH) / 2, cssW, cssH);
+      const du = (1 - cssW / fullW) / 2, dv = (1 - cssH / fullH) / 2;
+      this.visibleRect[0] = du;
+      this.visibleRect[1] = dv;
+      this.visibleRect[2] = 1 - du;
+      this.visibleRect[3] = 1 - dv;
     }
     this.camera.updateProjectionMatrix();
   }
@@ -160,7 +172,27 @@ export class TryOnRenderer {
     // Upload the frame that was just tracked (VideoTexture's own frame callback may run later).
     if (this.videoTexture) this.videoTexture.needsUpdate = true;
     this.resize();
+    this.onBeforeRender?.();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Copies the last rendered frame (call right after render(), in the same task) into a new 2D
+   * canvas, mirrored like the on-screen preview when `mirror`. Pixels never leave the page.
+   */
+  snapshot(mirror: boolean): HTMLCanvasElement {
+    const src = this.canvas;
+    const out = document.createElement('canvas');
+    out.width = src.width;
+    out.height = src.height;
+    const ctx = out.getContext('2d');
+    if (!ctx) throw new Error('2D canvas unavailable');
+    if (mirror) {
+      ctx.translate(out.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(src, 0, 0);
+    return out;
   }
 
   get contextLost(): boolean {

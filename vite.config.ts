@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),
+        shop: resolve(__dirname, 'demo/shop.html'),
         tracking: resolve(__dirname, 'demo/tracking.html'),
         tryon: resolve(__dirname, 'demo/tryon.html'),
         viewer: resolve(__dirname, 'demo/viewer.html'),

@@ -52,6 +52,10 @@ export class TrackingLoop {
     this.trueSize = new TrueSizeEstimator(this.camera);
   }
 
+  get isRunning(): boolean {
+    return this.running;
+  }
+
   addListener(fn: TrackingListener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

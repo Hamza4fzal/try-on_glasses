@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Demo store — product page</title>
+    <link rel="stylesheet" href="./shop.css" />
+  </head>
+  <body>
+    <header class="site">
+      <a class="brand" href="./shop.html">Demo&nbsp;Store</a>
+      <nav aria-label="Main"><a href="#more">Eyeglasses</a><a href="#more">Sunglasses</a></nav>
+      <span class="tag">Try-on demo</span>
+    </header>
+
+    <main>
+      <section class="product" aria-labelledby="p-name">
+        <div class="gallery"><img id="p-image" alt="" width="800" height="480" /></div>
+        <div class="info">
+          <p class="crumb" id="p-kind"></p>
+          <h1 id="p-name">Loading…</h1>
+          <p class="price" id="p-price"></p>
+          <p class="desc" id="p-desc"></p>
+          <p class="size" id="p-size"></p>
+          <div class="colour">
+            <p class="label">Colour: <strong id="p-colour"></strong></p>
+            <div class="swatches" id="p-swatches" role="radiogroup" aria-label="Colour"></div>
+          </div>
+          <div class="buy">
+            <button class="btn try" id="try" data-vto-product="">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.6l1.4-2h7l1.4 2h1.6A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/></svg>
+              Try on virtually
+            </button>
+            <button class="btn bag" id="bag" type="button">Add to bag</button>
+          </div>
+          <p class="note" id="note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>
+            The try-on runs in your browser. Your camera is never recorded or uploaded.
+          </p>
+        </div>
+      </section>
+
+      <section class="more" id="more" aria-labelledby="more-h">
+        <h2 id="more-h">More frames</h2>
+        <div class="grid" id="grid"></div>
+      </section>
+    </main>
+
+    <footer class="site">
+      Demo storefront for the standalone try-on. Products and 3D models are development stand-ins.
+      <a href="../index.html">All demo pages</a>
+    </footer>
+    <script type="module" src="./shop.ts"></script>
+  </body>
+</html>

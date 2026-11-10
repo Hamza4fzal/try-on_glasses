@@ -47,6 +47,8 @@ export class GlassesRig {
   ];
   /** Effective size factor used for the last update. */
   kEff = 1;
+  /** Wearer's head width relative to the canonical head (from the live face outline). */
+  headWidthScale = 1;
 
   private readonly inner = new Group(); // glasses space
   private readonly axes = new AxesHelper(0.03);
@@ -101,6 +103,16 @@ export class GlassesRig {
     this.debug = on;
     this.axes.visible = on;
     if (this.boxHelper) this.boxHelper.visible = on;
+  }
+
+  /**
+   * Widens/narrows the temple targets (ear rests) to the measured head width. Small changes are
+   * ignored so the temples don't re-aim on every frame.
+   */
+  setHeadWidthScale(s: number): void {
+    if (Math.abs(s - this.headWidthScale) < 0.004) return;
+    this.headWidthScale = s;
+    this.dirty = true;
   }
 
   /** Per tracked frame. `k` = TrueSizeEstimator.factor. */
@@ -164,7 +176,7 @@ export class GlassesRig {
       const fit = this.templeFit[t.side === 1 ? 0 : 1];
       fit.clamped = false;
       if (c.templeAutoFit) {
-        this.target.set(t.side * ear.x, ear.y, ear.z).applyMatrix4(this.Ginv).sub(t.node.position);
+        this.target.set(t.side * ear.x * this.headWidthScale, ear.y, ear.z).applyMatrix4(this.Ginv).sub(t.node.position);
         const want = Math.atan2(t.side * this.target.x, -this.target.z);
         const wantPhi = Math.atan2(-this.target.y, Math.hypot(this.target.x, this.target.z));
         theta = clamp(want, theta0 + SPREAD_RANGE[0] * DEG, theta0 + SPREAD_RANGE[1] * DEG);

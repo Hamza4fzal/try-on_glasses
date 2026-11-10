@@ -11,11 +11,12 @@
       "frame": { "lensWidthMm": 52, "bridgeMm": 18, "templeLengthMm": 145, "lensHeightMm": 40 },
       "calibration": {},
       "defaultVariant": "havana",
+      "image": "images/aria-havana.webp",
       "variants": [
-        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana" },
-        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black" },
-        { "id": "crystal", "label": "Crystal clear", "swatch": "#e8edf0", "gltfVariant": "crystal" },
-        { "id": "honey", "label": "Honey tortoise", "swatch": "#c99045", "gltfVariant": "honey" }
+        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana", "image": "images/aria-havana.webp" },
+        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black", "image": "images/aria-black.webp" },
+        { "id": "crystal", "label": "Crystal clear", "swatch": "#e8edf0", "gltfVariant": "crystal", "image": "images/aria-crystal.webp" },
+        { "id": "honey", "label": "Honey tortoise", "swatch": "#c99045", "gltfVariant": "honey", "image": "images/aria-honey.webp" }
       ]
     },
     {
@@ -28,10 +29,11 @@
       "frame": { "lensWidthMm": 51, "bridgeMm": 19, "templeLengthMm": 140, "lensHeightMm": 38 },
       "calibration": {},
       "defaultVariant": "black",
+      "image": "images/mira-black.webp",
       "variants": [
-        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black" },
-        { "id": "rose", "label": "Rose crystal", "swatch": "#e9a3a8", "gltfVariant": "rose" },
-        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana" }
+        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black", "image": "images/mira-black.webp" },
+        { "id": "rose", "label": "Rose crystal", "swatch": "#e9a3a8", "gltfVariant": "rose", "image": "images/mira-rose.webp" },
+        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana", "image": "images/mira-havana.webp" }
       ]
     },
     {
@@ -44,11 +46,12 @@
       "frame": { "lensWidthMm": 49, "bridgeMm": 21, "templeLengthMm": 145, "lensHeightMm": 44 },
       "calibration": {},
       "defaultVariant": "gold",
+      "image": "images/orbit-gold.webp",
       "variants": [
-        { "id": "gold", "label": "Gold", "swatch": "#d4a94f", "gltfVariant": "gold" },
-        { "id": "silver", "label": "Silver", "swatch": "#d9d9d6", "gltfVariant": "silver" },
-        { "id": "gunmetal", "label": "Gunmetal", "swatch": "#55585c", "gltfVariant": "gunmetal" },
-        { "id": "matte_black", "label": "Matte black", "swatch": "#1e1e20", "gltfVariant": "matte_black" }
+        { "id": "gold", "label": "Gold", "swatch": "#d4a94f", "gltfVariant": "gold", "image": "images/orbit-gold.webp" },
+        { "id": "silver", "label": "Silver", "swatch": "#d9d9d6", "gltfVariant": "silver", "image": "images/orbit-silver.webp" },
+        { "id": "gunmetal", "label": "Gunmetal", "swatch": "#55585c", "gltfVariant": "gunmetal", "image": "images/orbit-gunmetal.webp" },
+        { "id": "matte_black", "label": "Matte black", "swatch": "#1e1e20", "gltfVariant": "matte_black", "image": "images/orbit-matte_black.webp" }
       ]
     },
     {
@@ -61,10 +64,11 @@
       "frame": { "lensWidthMm": 58, "bridgeMm": 14, "templeLengthMm": 140, "lensHeightMm": 50 },
       "calibration": {},
       "defaultVariant": "gold_g15",
+      "image": "images/pilot-gold_g15.webp",
       "variants": [
-        { "id": "gold_g15", "label": "Gold / G-15 green", "swatch": "#d4a94f", "gltfVariant": "gold_g15" },
-        { "id": "silver_gradient", "label": "Silver / grey gradient", "swatch": "#d9d9d6", "gltfVariant": "silver_gradient" },
-        { "id": "gunmetal_mirror", "label": "Gunmetal / blue mirror", "swatch": "#3b5b9a", "gltfVariant": "gunmetal_mirror" }
+        { "id": "gold_g15", "label": "Gold / G-15 green", "swatch": "#d4a94f", "gltfVariant": "gold_g15", "image": "images/pilot-gold_g15.webp" },
+        { "id": "silver_gradient", "label": "Silver / grey gradient", "swatch": "#d9d9d6", "gltfVariant": "silver_gradient", "image": "images/pilot-silver_gradient.webp" },
+        { "id": "gunmetal_mirror", "label": "Gunmetal / blue mirror", "swatch": "#3b5b9a", "gltfVariant": "gunmetal_mirror", "image": "images/pilot-gunmetal_mirror.webp" }
       ]
     }
   ]

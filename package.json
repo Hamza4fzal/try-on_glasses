@@ -14,10 +14,12 @@
     "vendor": "node tools/vendor-mediapipe.mjs",
     "canonical-face": "node tools/build-canonical-face.mjs",
     "models": "node tools/generate-models.mjs",
+    "thumbs": "node tools/render-thumbs.mjs",
     "test:tracking": "node tests/run-tracking.mjs",
     "test:tracking:sweep": "node tests/run-tracking.mjs --sweep",
     "test:render": "node tests/run-render.mjs",
-    "test": "npm run test:tracking && npm run test:render",
+    "test:modal": "node tests/run-modal.mjs",
+    "test": "npm run test:tracking && npm run test:render && npm run test:modal",
     "shots": "node tests/shots.mjs"
   },
   "dependencies": {

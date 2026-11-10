@@ -12,12 +12,13 @@ at runtime.
 
 ```bash
 npm install          # also vendors MediaPipe wasm + model into public/mediapipe (sha256-verified)
-npm run dev          # http://localhost:5173/  → links to the three labs
+npm run dev          # http://localhost:5173/  → links to the demo store and the labs
 npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-signed certificate)
 ```
 
 | Page | What it is |
 |---|---|
+| `demo/shop.html` | **Demo store**: a product page with the customer-facing **“Try on virtually”** modal (camera consent, live try-on, colours, other frames, photo) |
 | `demo/tryon.html` | **Fitting lab**: live camera try-on, product + colour pickers, calibration sliders, debug overlays, calibration JSON export |
 | `demo/viewer.html` | **3D fit preview**: the glasses on MediaPipe's canonical head from any angle, no camera needed |
 | `demo/tracking.html` | **Tracking lab**: landmarks, solved pose, jitter HUD |
@@ -26,12 +27,14 @@ npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-sign
 |---|---|
 | `npm run typecheck` | TypeScript strict check |
 | `npm run build` | Production build into `dist/` |
-| `npm run test` | Both test suites below |
+| `npm run test` | All three test suites below |
 | `npm run test:tracking` | Headless-Chrome tracking benchmark + page smoke test (uses installed Chrome; `CHROME_PATH` overrides) |
 | `npm run test:tracking:sweep` | Prints filter-parameter trade-off tables (used to tune smoothing) |
-| `npm run test:render` | Model validation, glasses fit on a real face photo, variants, GPU-leak and camera-stop checks |
+| `npm run test:render` | Model validation, glasses fit on a real face photo, occlusion modes, contact shadows, variants, GPU-leak and camera-stop checks |
+| `npm run test:modal` | Customer modal: consent before camera, full flow, photo, no uploads, error states, pause in background, keyboard/focus, phone layout |
 | `npm run models` | Regenerates the dev glasses models (`public/models/*.glb`) |
 | `npm run shots` | Multi-angle screenshots of every model on the reference head → `test-output/shots/` |
+| `npm run thumbs` | Renders product images from the GLBs → `public/products/images/` (demo store) |
 
 ## Status
 
@@ -39,9 +42,9 @@ npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-sign
 |---|---|
 | 1. Project setup (standalone) | ✅ |
 | 2. Tracking engine + tracking lab | ✅ automated tests pass; live webcam check done |
-| 3. 3D rendering engine, GLB glasses, calibration | ✅ automated tests pass. **Needs a live-webcam look** |
+| 3. 3D rendering engine, GLB glasses, calibration | ✅ live webcam check done |
 | 4. WordPress plugin | after you approve the standalone app |
-| 5. Occlusion, materials, photo capture | |
+| 5. Occlusion, contact shadows, photo capture, customer modal | ✅ automated tests pass. **Needs a live-webcam look** |
 | 6. Performance, device testing, production build | |
 
 ## Tracking lab (`demo/tracking.html`)
@@ -99,12 +102,81 @@ time with CSS, applied to video and overlay together.
   `k` is the wearer's iris-measured real size, so frames keep their true size on every face.
   Temples are aimed at the ear rests of a canonical head model, and tilt and scale are
   compensated automatically.
-- **FaceOccluder** is invisible, depth-only geometry for the face, skull and ears. It hides temple
-  parts that pass behind the head.
+- **FaceOccluder** is invisible geometry for the head. The face part follows the *live* landmarks
+  (each vertex on the camera ray through its tracked image point, at the solved pose's depth, shape
+  deviation lightly smoothed in face space), so the occluding outline is the wearer's real face.
+  Skull and ear proxies follow the pose and are widened to the measured head width, which also
+  aims the temples.
+- **Occlusion** has two modes:
+  - **soft** (default, high quality): the occluder is rendered into a depth texture and every
+    glasses material fades out over 6 mm behind the head (MSAA alpha-to-coverage). Temples
+    disappear into hair and behind ears without a hard polygon cut.
+  - **hard** (fallback, `?quality=low`): the occluder writes the depth buffer directly.
+
+  Without a live face the occluder falls back to the rigid canonical face.
+- **ContactShadows**: a zero-intensity, mostly frontal shadow light casts a small, blurred (VSM)
+  shadow map of the frame (lenses excluded) onto the live face surface (ShadowMaterial). The frame
+  then sits *on* the face. Off in low quality.
 - **LightEstimator** follows the room's brightness using a tiny local downsample of the camera
   image, so the glasses don't glow in a dark room.
 - **Product catalogue** (`public/products/products.json`, stand-in for WooCommerce meta) holds the
   model URL, colourways and calibration. Every value is sanitised and clamped on load.
+
+## Customer modal (`src/ui`, `src/vto.ts`)
+
+```ts
+import { createVirtualTryOn } from './src/vto';
+const vto = await createVirtualTryOn({ catalogUrl: '/products/products.json', assetBase: '/' });
+vto.bindButtons();   // <button data-vto-product="aria" data-vto-variant="black">Try on virtually</button>
+```
+
+**Flow:**
+
+1. **Intro:** what happens, privacy, tips.
+2. **Start camera:** the only point where the camera is requested.
+3. **Browser prompt:** a hint appears only if the browser actually asks.
+4. **Loading:** face tracking and the model are preloaded while the intro shows.
+5. **Live:**
+   - A colour radio group, kept in sync with the product page.
+   - A "More frames" strip.
+   - One-line guidance, for example "Move a little closer".
+   - The shutter.
+6. **Photo:**
+   - The photo is a local blob.
+   - **Save** downloads it on the device.
+   - **Share** uses the Web Share API with the file.
+   - **Back** returns to the try-on.
+
+Closing, Esc, or the tab going to the background stops every camera track.
+
+**Errors:** every failure has a message and, where it helps, a retry.
+
+| Situation | Message |
+|---|---|
+| Permission denied | Includes how to unblock it for Chrome/Edge, Safari, iOS, Android or Firefox |
+| No camera | "No camera found" |
+| Camera busy | "Your camera is busy" |
+| Camera interrupted | "The camera stopped" |
+| No HTTPS | "Secure connection needed" (no retry) |
+| Browser can't use the camera / in-app webview | "Camera not available here" |
+| WebGL off | "3D graphics are turned off" |
+| Tracking or model download failed | "Couldn't load face tracking" / "Couldn't load this frame" |
+| GPU context lost | "Graphics were reset" (rebuilds the engine) |
+
+**Isolation and theming:** the modal lives in a shadow root, so the store's CSS can't break it and
+it can't affect the store. Restyle it with custom properties: `vto-modal { --vto-accent: …;
+--vto-font: …; }`.
+
+**Text:** all strings are in `src/ui/strings.ts`, overridable and translatable.
+
+**Accessibility:**
+- dialog semantics
+- focus moved in, trapped, and restored to the button
+- live-region hints
+- keyboard swatches
+- reduced motion
+
+**Analytics:** `onEvent` reports UI events with product/variant ids and error codes only.
 
 ### Dev models (`npm run models`)
 
@@ -132,15 +204,19 @@ Every file passes the Khronos validator.
 
 | Model | Lens centre below pupil | Lens centre outside pupil | Temple spread / droop |
 |---|---|---|---|
-| Aria | 7.5 % | 5.8 % | 7.3° / 5.7° |
-| Mira | 6.8 % | 6.0 % | 6.3° / 6.4° |
-| Orbit | 4.5 % | 6.0 % | 8.2° / 2.0° |
-| Pilot | 8.3 % | 7.3 % | 6.1° / 6.8° |
+| Aria | 7.5 % | 6.0 % | 9.7° / 5.7° |
+| Mira | 6.8 % | 6.0 % | 9.0° / 6.3° |
+| Orbit | 4.5 % | 6.0 % | 11.0° / 2.0° |
+| Pilot | 8.3 % | 7.3 % | 9.3° / 6.7° |
+
+Temple spread follows the measured head width: ×1.07 for this face.
 
 Percentages are of the eye-corner span (1 % ≈ 0.9 mm). On top of these measurements:
 
 - The nose rest sits within 0.2 % of the tracked bridge.
 - There is no GPU memory growth over repeated product switches.
+- Occlusion hides the temple parts behind the head; soft and hard modes agree.
+- Contact shadows darken the face under the frame.
 - All camera tracks stop.
 
 ## Benchmark results (headless Chrome, CPU delegate, 1280×720)
@@ -169,14 +245,17 @@ live in the tracking lab.
 ```
 src/camera/      camera access, errors, switching
 src/tracking/    FaceTracker, CameraModel, PoseSolver, TrueSizeEstimator, TrackingLoop, canonical face data
-src/render/      renderer, GLB model + variants, face rig, occluder, light estimation
+src/app/         TryOnEngine (whole pipeline, UI-independent), face guidance hints
+src/ui/          customer modal (shadow DOM), strings
+src/vto.ts       public entry: createVirtualTryOn(), data-vto-* buttons
+src/render/      renderer, GLB model + variants, face rig, live occluder, soft occlusion, contact shadows, light
 src/product/     catalogue types, calibration, sanitising
 src/debug/       debug overlay + HUD
 src/utils/       One-Euro filters
-demo/            fitting lab, 3D fit preview, tracking lab
+demo/            demo store (customer modal), fitting lab, 3D fit preview, tracking lab
 public/models/   generated dev GLBs        public/products/  catalogue JSON
 docs/            MODEL_SPEC.md (GLB contract for real models)
-tests/           tracking benchmark, render tests, screenshot tool
+tests/           tracking benchmark, render tests, modal tests, screenshot tool
 tools/           MediaPipe vendoring, canonical face converter, parametric glasses generator
 ```
 

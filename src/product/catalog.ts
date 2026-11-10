@@ -49,6 +49,8 @@ export interface ProductVariant {
   gltfVariant?: string;
   /** Extra per-slot material overrides (slot → override), applied after gltfVariant. */
   materialOverrides?: Record<string, MaterialOverride>;
+  /** Product photo of this colourway (URL, resolved relative to the catalogue). */
+  image?: string;
 }
 
 export interface FrameSize {
@@ -67,6 +69,8 @@ export interface ProductConfig {
   enabled: boolean;
   /** GLB URL, resolved relative to the catalogue URL. */
   model: string;
+  /** Product photo / thumbnail URL (optional, resolved relative to the catalogue URL). */
+  image?: string;
   frame: FrameSize;
   calibration: Calibration;
   variants: ProductVariant[];
@@ -117,6 +121,14 @@ const str = (v: unknown, max = 200): string | undefined =>
 
 const CSS_COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i;
 
+/** Relative URLs or http(s) only (no javascript:/data: etc.). */
+const url = (v: unknown): string | undefined => {
+  const s = str(v, 500);
+  if (!s) return undefined;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(s)?.[1]?.toLowerCase();
+  return !scheme || scheme === 'http' || scheme === 'https' ? s : undefined;
+};
+
 export function sanitizeCalibration(input: unknown): Calibration {
   const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const d = DEFAULT_CALIBRATION;
@@ -163,6 +175,7 @@ function sanitizeVariant(input: unknown): ProductVariant | null {
     swatch,
     gltfVariant: str(o.gltfVariant, 64),
     materialOverrides: Object.keys(overrides).length ? overrides : undefined,
+    image: url(o.image),
   };
 }
 
@@ -182,6 +195,7 @@ export function sanitizeProduct(input: unknown): ProductConfig | null {
     price: str(o.price, 32),
     enabled: o.enabled !== false,
     model,
+    image: url(o.image),
     frame: {
       lensWidthMm: mm(f.lensWidthMm),
       bridgeMm: mm(f.bridgeMm),
@@ -204,7 +218,12 @@ export async function loadCatalog(url: string): Promise<Catalog> {
   const products = (raw.products ?? [])
     .map(sanitizeProduct)
     .filter((p): p is ProductConfig => !!p)
-    .map((p) => ({ ...p, model: new URL(p.model, base).href }));
+    .map((p) => ({
+      ...p,
+      model: new URL(p.model, base).href,
+      image: p.image && new URL(p.image, base).href,
+      variants: p.variants.map((v) => ({ ...v, image: v.image && new URL(v.image, base).href })),
+    }));
   return { version: 1, products };
 }
 

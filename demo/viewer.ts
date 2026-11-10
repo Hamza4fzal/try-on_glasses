@@ -33,12 +33,14 @@ const quality: RenderQuality = params.get('quality') === 'low' ? 'low' : 'high';
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const status = document.getElementById('status')!;
 
-const renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: params.has('capture') });
+// ?thumb: transparent background, no head — used by tools/render-thumbs.mjs for product images.
+const thumb = params.has('thumb');
+const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: thumb, preserveDrawingBuffer: params.has('capture') });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = SRGBColorSpace;
 renderer.toneMapping = params.get('tone') === 'aces' ? ACESFilmicToneMapping : NeutralToneMapping;
 const scene = new Scene();
-scene.background = new Color(0x1d1d20);
+scene.background = thumb ? null : new Color(0x1d1d20);
 const pmrem = new PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 const key = new DirectionalLight(0xffffff, 1.1);
@@ -110,6 +112,7 @@ const VIEWS: Record<string, { pos: V3; target?: V3 }> = {
   close: { pos: [12, 4, 20] },
   hinge: { pos: [17, 10, 12], target: [6.6, 3.6, 4.2] },
   inside: { pos: [-4, 6, -14], target: [5, 3, 4] },
+  product: { pos: [21, 7.5, 33], target: [0.6, 2.4, -2.2] },
 };
 function setView(name: string): void {
   const v = VIEWS[name] ?? VIEWS.front;
@@ -177,6 +180,10 @@ panel.debugBox.append(sizeRow);
 document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view!)));
 
 await showProduct(panel.product, params.get('variant') ?? undefined);
+if (thumb) {
+  head.visible = false;
+  scene.children.forEach((o) => ((o as Mesh).material === proxy || (o as Mesh).material === irisMat ? (o.visible = false) : 0));
+}
 
 function resize(): void {
   const w = canvas.clientWidth, h = canvas.clientHeight;

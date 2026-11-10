@@ -182,6 +182,13 @@ export class LabPanel {
     return box;
   }
 
+  addSelect(label: string, options: string[], initial: string, onChange: (value: string) => void): HTMLSelectElement {
+    const sel = el('select', {}, ...options.map((o) => el('option', { value: o, textContent: o, selected: o === initial })));
+    sel.addEventListener('change', () => onChange(sel.value));
+    this.debugBox.append(el('label', { className: 'lab-row' }, el('span', { textContent: label }), sel));
+    return sel;
+  }
+
   setInfo(text: string): void {
     this.info.textContent = text;
   }

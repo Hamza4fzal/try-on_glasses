@@ -130,6 +130,48 @@ try {
     check(fit.glassesPixelsPct > 0.5, `${p.id}: glasses visibly rendered (${f2(fit.glassesPixelsPct)}% of pixels changed)`);
   }
 
+  // Occlusion modes and contact shadows (aria): pixels covered by the glasses per mode.
+  await page.evaluate(() => window.__vto.show('aria'));
+  await new Promise((r) => setTimeout(r, 1200));
+  const occ = await page.evaluate(() => {
+    const { engine, view, rig, occluder } = window.__vto;
+    const gl = view.canvas;
+    const grab = () => {
+      view.render();
+      const c = document.createElement('canvas');
+      c.width = gl.width;
+      c.height = gl.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(gl, 0, 0);
+      return ctx.getImageData(0, 0, c.width, c.height).data;
+    };
+    const diff = (a, b, t = 24) => {
+      let n = 0;
+      for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]) > t) n++;
+      return n;
+    };
+    engine.shadows.receiver.visible = false;
+    rig.group.visible = false;
+    const base = grab();
+    rig.group.visible = true;
+    const count = {};
+    for (const m of ['off', 'hard', 'soft']) {
+      engine.occlusionMode = m;
+      occluder.group.visible = m !== 'off';
+      count[m] = diff(grab(), base);
+    }
+    engine.occlusionMode = 'soft';
+    const noShadow = grab();
+    engine.shadows.receiver.visible = true;
+    const withShadow = grab();
+    return { ...count, shadowPx: diff(withShadow, noShadow, 6), live: occluder.live, headWidth: occluder.headWidthRatio };
+  });
+  console.log(`  occlusion (aria): glasses pixels off ${occ.off}, hard ${occ.hard}, soft ${occ.soft}; shadow pixels ${occ.shadowPx}; live face ${occ.live}, head width ×${occ.headWidth.toFixed(3)}`);
+  check(occ.off > occ.hard && occ.off > occ.soft, 'occluder hides glasses parts behind the head (off > hard, off > soft)');
+  check(Math.abs(occ.soft - occ.hard) < 0.25 * (occ.off - occ.hard) + 200, 'soft occlusion hides about as much as hard occlusion (fallback consistent)');
+  check(occ.shadowPx > 50, `contact shadows darken the face (${occ.shadowPx} px)`);
+  check(occ.live && occ.headWidth > 0.85 && occ.headWidth < 1.2, 'occluder follows the live face; head width plausible');
+
   // Variants: materials change.
   const variantCheck = await page.evaluate(async () => {
     const { show } = window.__vto;
