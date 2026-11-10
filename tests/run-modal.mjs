@@ -269,6 +269,25 @@ try {
     check(live.length === 2 && live.reduce((a, b) => a + b, 0) === 1, `cancel + restart during the prompt leaves exactly one camera on (${JSON.stringify(live)})`);
     check(await p.evaluate(() => window.__state() === 'live'), 'try-on still live after the late stream was discarded');
 
+    // Headless software rendering runs far below the camera's 30 fps: adaptive quality must
+    // step down to the cheapest level and keep tracking.
+    const t0 = Date.now();
+    await p
+      .waitForFunction(() => {
+        const q = window.__shop.vto._modal.tryOnEngine.qualityLevel;
+        return q.index === q.count - 1;
+      }, { polling: 250, timeout: 40000 })
+      .catch(() => undefined);
+    const q = await p.evaluate(() => {
+      const e = window.__shop.vto._modal.tryOnEngine;
+      return { ...e.qualityLevel, occ: e.occlusionMode, shadows: e.shadows.enabled, fps: e.renderFps, valid: e.loop.solver.pose.valid, dpr: e.view.renderer.getPixelRatio() };
+    });
+    check(
+      q.index === q.count - 1 && q.occ === 'hard' && !q.shadows && q.dpr === q.pixelRatio && q.valid,
+      `slow device (${q.fps.toFixed(1)} fps): adaptive quality stepped down to ${q.index + 1}/${q.count} (hard occlusion, no shadows) in ${((Date.now() - t0) / 1000).toFixed(0)} s, still tracking`,
+    );
+    await p.screenshot({ path: `${out}/13-adaptive-low.png` });
+
     // Closing while the engine is still loading must also release the camera.
     await p.evaluate(() => window.__shop.vto.close());
     const after = await p.evaluate(() => window.__streams.every((s) => s.getTracks().every((t) => t.readyState === 'ended')));

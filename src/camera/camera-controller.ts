@@ -68,6 +68,12 @@ export class CameraController {
     return this.gen;
   }
 
+  /** Frame rate the camera actually delivers (track settings), if the browser reports it. */
+  get frameRate(): number | undefined {
+    const fr = this.stream?.getVideoTracks()[0]?.getSettings().frameRate;
+    return typeof fr === 'number' && fr > 0 ? fr : undefined;
+  }
+
   get active(): boolean {
     return this.stream !== null;
   }

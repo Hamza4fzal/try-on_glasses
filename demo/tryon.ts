@@ -25,6 +25,8 @@ const engine = new TryOnEngine($<HTMLCanvasElement>('gl'), {
   quality,
   delegate: d === 'CPU' || d === 'GPU' ? d : 'auto',
   preserveDrawingBuffer: params.has('capture'),
+  // The lab is for manual inspection: adaptive quality only with ?adaptive (or the toggle).
+  adaptive: params.has('adaptive'),
 });
 const { camera, tracker, loop, view, rig, occluder, light } = engine;
 const overlay = new DebugOverlay($<HTMLCanvasElement>('overlay'), $('hud'));
@@ -46,8 +48,16 @@ panel.addToggle('Face mesh in overlay', false, (on) => (overlay.showMesh = on));
 panel.addToggle('Glasses axes + bounding box', false, (on) => rig.setDebug(on));
 panel.addToggle('Show occluder', false, (on) => occluder.setDebug(on));
 panel.addToggle('Live face shape (occluder)', true, (on) => (occluder.liveShape = on));
-panel.addSelect('Occlusion', ['soft', 'hard', 'off'], engine.occlusionMode, (m) => (engine.occlusionMode = m as OcclusionMode));
-panel.addToggle('Contact shadows', engine.shadows.enabled, (on) => (engine.shadows.enabled = on));
+const adaptiveBox = panel.addToggle('Adaptive quality (as customers get it)', engine.adaptive, (on) => (engine.adaptive = on));
+// Manual choices switch adaptive quality off (otherwise it would override them).
+panel.addSelect('Occlusion', ['soft', 'hard', 'off'], engine.occlusionMode, (m) => {
+  engine.occlusionMode = m as OcclusionMode;
+  adaptiveBox.checked = false;
+});
+panel.addToggle('Contact shadows', engine.shadows.enabled, (on) => {
+  engine.setShadows(on);
+  adaptiveBox.checked = false;
+});
 panel.addToggle('Match room lighting', true, (on) => {
   light.enabled = on;
   if (!on) {
@@ -85,7 +95,7 @@ engine.addFrameListener((frame, pose, trueSize) => {
     overlay.draw(frame, pose, loop.camera, trueSize, loop.stats, {
       renderFps: engine.renderFps,
       lines: [
-        `model ${panel.product.id}/${engine.model?.variant ?? '-'}  kEff ${rig.kEff.toFixed(3)}  dpr ${view.pixelRatio}  quality ${engine.quality}`,
+        `model ${panel.product.id}/${engine.model?.variant ?? '-'}  kEff ${rig.kEff.toFixed(3)}  dpr ${view.pixelRatio}  quality ${engine.quality}  ${engine.adaptive ? `adaptive ${engine.qualityLevel.index + 1}/${engine.qualityLevel.count} (${engine.governor.fps.toFixed(0)} fps)` : 'manual'}`,
         `calib scale ${c.scale.toFixed(3)} off [${c.offsetMm.map((v) => v.toFixed(1)).join(', ')}] mm rot [${c.rotationDeg.map((v) => v.toFixed(1)).join(', ')}]°`,
         `temples L ${f[0].spreadDeg.toFixed(1)}°/${f[0].droopDeg.toFixed(1)}°  R ${f[1].spreadDeg.toFixed(1)}°/${f[1].droopDeg.toFixed(1)}°${f[0].clamped || f[1].clamped ? ' clamped' : ''}  head width ×${occluder.headWidthRatio.toFixed(3)}`,
         `occlusion ${engine.occlusionMode}${occluder.live ? ' (live face)' : ' (rigid)'}  shadows ${engine.shadows.enabled ? 'on' : 'off'}  light lum ${light.sceneLuminance.toFixed(3)} env ${view.scene.environmentIntensity.toFixed(2)}`,

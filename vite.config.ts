@@ -13,6 +13,9 @@ export default defineConfig(({ mode }) => ({
   build: {
     target: 'es2022',
     sourcemap: true,
+    // three.js (~600 KB, ~155 KB gzip) is one chunk by nature; it is only loaded on demand
+    // (try-on intent/open), never with the product page.
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'index.html'),

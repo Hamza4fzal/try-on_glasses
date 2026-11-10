@@ -14,6 +14,7 @@ import { TrackingLoop, type TrackingListener } from '../tracking/tracking-loop';
 import type { TrueSizeEstimator } from '../tracking/true-size-estimator';
 import { EngineError } from './engine-errors';
 import { FaceGuidance } from './guidance';
+import { PerformanceGovernor, qualityLevels, type QualityLevel } from './perf-governor';
 
 export { EngineError, type EngineErrorCode } from './engine-errors';
 
@@ -33,6 +34,11 @@ export interface TryOnEngineOptions {
    * while this engine is still downloading. Default: a new one.
    */
   camera?: CameraController;
+  /**
+   * Adaptive quality (default true): lowers render resolution / effects when the device can't
+   * keep up with the camera, and raises them again when it can. See perf-governor.ts.
+   */
+  adaptive?: boolean;
 }
 
 /** True when this browser can create a WebGL2 context (three.js requires WebGL2). */
@@ -81,6 +87,9 @@ export class TryOnEngine {
   variant: ProductVariant | null = null;
   /** Rendered frames per second (≈ tracked fps). */
   renderFps = 0;
+  /** Adaptive quality on/off. Manually choosing occlusion or shadows turns it off. */
+  adaptive: boolean;
+  readonly governor: PerformanceGovernor;
 
   private occlusion: OcclusionMode;
   private trackerPromise: Promise<void> | null = null;
@@ -110,10 +119,14 @@ export class TryOnEngine {
     this.view.add(this.occluder.group);
     this.view.add(this.rig.group);
     this.shadows = new ContactShadows(this.view, this.occluder.faceGeometry, this.occluder.faceSide);
-    // Low quality: hard (depth-buffer) occlusion and no shadow map — both cost a pass.
-    this.occlusion = this.quality === 'high' ? 'soft' : 'hard';
-    this.shadows.enabled = this.quality === 'high';
-    this.applyOcclusionMode();
+    // Quality ladder: 'high' starts at the top; 'low' (weak device) at the first level without the
+    // soft-occlusion and shadow passes. The governor moves along it at runtime.
+    const levels = qualityLevels(window.devicePixelRatio || 1, opts.maxPixelRatio ?? 2);
+    const start = this.quality === 'high' ? 0 : Math.max(0, levels.findIndex((l) => l.occlusion === 'hard'));
+    this.governor = new PerformanceGovernor(levels, start);
+    this.adaptive = opts.adaptive ?? true;
+    this.occlusion = levels[start].occlusion;
+    this.applyLevel(levels[start]);
     this.view.onBeforeRender = () => {
       if (this.occlusion === 'soft') {
         this.softOcclusion.render(this.view.renderer, this.occluder.group, this.view.camera, this.occluder.debugVisible);
@@ -161,6 +174,8 @@ export class TryOnEngine {
     if (variant) await m.setVariant(variant.gltfVariant ?? null, variant.materialOverrides);
     if (token !== this.loadToken || this.disposed) return m.dispose();
     this.prepareModel(m);
+    await this.precompile(m);
+    if (token !== this.loadToken || this.disposed) return m.dispose();
     this.rig.setModel(m);
     this.rig.setCalibration(product.calibration);
     this.model?.dispose();
@@ -187,6 +202,19 @@ export class TryOnEngine {
     this.variant = v;
   }
 
+  /**
+   * Compiles the model's shaders (PBR + transmission + occlusion/shadow variants) before it is
+   * shown, in parallel where the browser supports KHR_parallel_shader_compile — otherwise the
+   * first live frame stalls for hundreds of ms on phones.
+   */
+  private async precompile(m: GlassesModel): Promise<void> {
+    try {
+      await this.view.renderer.compileAsync(m.root, this.view.camera, this.view.scene);
+    } catch {
+      /* not fatal: shaders then compile on first render */
+    }
+  }
+
   private prepareModel(m: GlassesModel): void {
     m.forEachMesh((mesh, slot) => {
       // Clear lenses barely shadow; sun lenses would tint it — not worth a coloured shadow pass.
@@ -211,6 +239,8 @@ export class TryOnEngine {
   /** Starts tracking + rendering (camera must be running and tracking loaded). */
   startTracking(): void {
     this.guidance.reset();
+    this.governor.setCameraFps(this.camera.frameRate);
+    this.governor.reset();
     this.loop.start();
   }
 
@@ -255,8 +285,29 @@ export class TryOnEngine {
     return this.occlusion;
   }
 
+  /** Manual choice (fitting lab): also turns adaptive quality off. */
   set occlusionMode(m: OcclusionMode) {
+    this.adaptive = false;
     this.occlusion = m;
+    this.applyOcclusionMode();
+  }
+
+  /** Manual choice (fitting lab): also turns adaptive quality off. */
+  setShadows(on: boolean): void {
+    this.adaptive = false;
+    this.shadows.enabled = on;
+  }
+
+  /** Current adaptive-quality level (index 0 = best) and its settings. */
+  get qualityLevel(): { index: number; count: number } & QualityLevel {
+    return { index: this.governor.level, count: this.governor.levels.length, ...this.governor.current };
+  }
+
+  private applyLevel(l: QualityLevel): void {
+    this.view.setPixelRatio(l.pixelRatio);
+    this.view.renderer.transmissionResolutionScale = l.transmissionScale;
+    if (this.occlusion !== 'off') this.occlusion = l.occlusion;
+    this.shadows.enabled = l.shadows;
     this.applyOcclusionMode();
   }
 
@@ -317,6 +368,10 @@ export class TryOnEngine {
     this.light.update(this.camera.video, now, dt);
     this.view.render();
     this.flushCaptures(); // same task as render → the drawing buffer is still valid
+    if (this.adaptive) {
+      const level = this.governor.frame(now);
+      if (level) this.applyLevel(level); // takes effect from the next frame
+    }
 
     this.guidance.update(now, frame, pose, this.view.visibleRect, this.light.sceneLuminance);
     this.fpsCount++;
