@@ -27,12 +27,16 @@ npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-sign
 |---|---|
 | `npm run typecheck` | TypeScript strict check |
 | `npm run build` | Production build into `dist/` |
-| `npm run test` | All three test suites below |
+| `npm run test` | All test suites below |
+| `npm run test:unit` | Pure-logic unit tests (adaptive-quality governor), no browser |
 | `npm run test:tracking` | Headless-Chrome tracking benchmark + page smoke test (uses installed Chrome; `CHROME_PATH` overrides) |
 | `npm run test:tracking:sweep` | Prints filter-parameter trade-off tables (used to tune smoothing) |
 | `npm run test:render` | Model validation, glasses fit on a real face photo, occlusion modes, contact shadows, variants, GPU-leak and camera-stop checks |
-| `npm run test:modal` | Customer modal: consent before camera, full flow, photo, no uploads, error states, pause in background, keyboard/focus, phone layout |
-| `npm run models` | Regenerates the dev glasses models (`public/models/*.glb`) |
+| `npm run test:modal` | Customer modal: consent before camera, full flow, photo, no uploads, error states, pause in background, keyboard/focus, phone layout, lazy loading, camera races, adaptive quality on a slow device |
+| `npm run test:perf` | Per-frame allocations of our code (sampling heap profiler), heap growth, frame timings |
+| `npm run test:dist` | Builds, serves `dist/`, goes live from the built bundle, reports what a customer downloads at each step |
+| `npm run models` | Regenerates the dev glasses models (`public/models/*.glb`, web-optimised) |
+| `npm run optimize-model -- in.glb [out.glb]` | Web-optimises a real (e.g. Blender) model: meshopt geometry, WebP textures, validated |
 | `npm run shots` | Multi-angle screenshots of every model on the reference head → `test-output/shots/` |
 | `npm run thumbs` | Renders product images from the GLBs → `public/products/images/` (demo store) |
 
@@ -44,8 +48,8 @@ npm run dev:https    # HTTPS on your LAN for phone testing (accept the self-sign
 | 2. Tracking engine + tracking lab | ✅ automated tests pass; live webcam check done |
 | 3. 3D rendering engine, GLB glasses, calibration | ✅ live webcam check done |
 | 4. WordPress plugin | after you approve the standalone app |
-| 5. Occlusion, contact shadows, photo capture, customer modal | ✅ automated tests pass. **Needs a live-webcam look** |
-| 6. Performance, device testing, production build | |
+| 5. Occlusion, contact shadows, photo capture, customer modal | ✅ live webcam check done |
+| 6. Performance, device testing, production build | ✅ automated tests pass. **Needs real-phone testing** (checklist below) |
 
 ## Tracking lab (`demo/tracking.html`)
 
@@ -240,23 +244,122 @@ The face photo is moved along scripted paths, with webcam-like noise injected
 **Not covered by the benchmark:** a still photo cannot produce real 3D yaw or pitch. Those are verified
 live in the tracking lab.
 
+## Performance (Phase 6)
+
+### Loading in stages
+
+| Step | What downloads (gzip) |
+|---|---|
+| Product page | ~5 KB of try-on JavaScript (catalogue + buttons). No 3D engine, no tracking, no models |
+| Hover / focus / touch on a try-on button | ~240 KB: modal UI, three.js, MediaPipe JS. Nothing else |
+| Open the try-on | Tracking runtime (wasm, 3.9 MB) + tracking model (3.3 MB) + the frame (~200–270 KB), while the customer reads the intro. Cached by the browser afterwards |
+| Start camera | Nothing new: the camera is requested inside the click, before any await |
+| Another frame | One model, ~200–270 KB |
+
+`preload: 'intent' | 'idle' | 'none'` in `createVirtualTryOn()` controls the JavaScript prefetch.
+The tracking data is never prefetched before a customer opens the try-on.
+
+### Models
+
+`tools/optimize-model.mjs` makes models ~3–4× smaller with no visible change:
+
+- **Geometry:** quantised (KHR_mesh_quantization: positions 14-bit, about 0.01 mm on a frame) and
+  meshopt-compressed. three.js decodes it with a small inline decoder: no extra request.
+- **Textures:** WebP, at most 1024 px.
+
+It keeps node names, extras, temple pivots and colourway variants. It also restores
+`KHR_materials_volume` thickness after quantisation; otherwise tinted acetate such as Mira's rose
+crystal would lose its colour. Fit, occlusion and product renders were checked unchanged.
+
+| Model | Before | After (gzip) |
+|---|---|---|
+| Aria | 1.83 MB | 495 KB (273 KB) |
+| Mira | 1.53 MB | 468 KB (252 KB) |
+| Orbit | 1.26 MB | 388 KB (211 KB) |
+| Pilot | 1.07 MB | 384 KB (201 KB) |
+
+### Adaptive quality (`src/app/perf-governor.ts`)
+
+Every camera frame is tracked and rendered. If a phone can't keep up, the overlay lags the face,
+which is worse than slightly simpler rendering. The governor works like this:
+
+- It measures tracked fps against the camera's rate (capped at 30) over 2-second windows.
+- One clearly slow window (< 80 %) steps down one level. A window to settle follows every change.
+- After 10 s at full rate it tries one level up. A level that fails once is not retried in that
+  session.
+
+| Level | Render resolution | Lens refraction buffer | Occlusion | Contact shadows |
+|---|---|---|---|---|
+| 1 | device (max 2×) | full | soft | on |
+| 2 | max 1.5× | half | soft | on |
+| 3 | max 1.5× | half | hard (depth buffer) | off |
+| 4 | 1× | half | hard | off |
+
+Tracking, fit and true size are never degraded. Devices that report ≤ 3 GB memory or ≤ 4 cores
+start at level 3.
+
+Model shaders are compiled in advance (`compileAsync`), so the first live frame doesn't stall.
+
+### Main-thread budget
+
+- **Our per-frame code** (pose, true size, live occluder, rig + temples, shadows, guidance):
+  - about 50 µs per frame;
+  - about 0.2 KB allocated per frame. It was about 1 KB before Phase 6; `Math.hypot` was the
+    main cause.
+- **MediaPipe** allocates about 200 KB per frame for its own result objects. We can't change that.
+- **Heap:** flat over long runs.
+
+### Why tracking is not in a Web Worker
+
+It was evaluated and deliberately not done:
+
+1. **Sync.** The current loop tracks and renders the same video frame in the same
+   `requestVideoFrameCallback`, so glasses and image are always in sync. A worker returns results
+   asynchronously. Staying in sync then means delaying the displayed video by the inference time,
+   which makes the mirror feel laggy.
+2. **GPU access.** MediaPipe's GPU delegate inside a worker needs WebGL on an OffscreenCanvas,
+   which older iOS versions lack.
+3. **Low contention.** While the try-on is live the page does almost nothing else, and our own
+   per-frame code is about 0.05 ms.
+
+The remaining main-thread cost is MediaPipe's inference: roughly 5–15 ms per frame with the GPU
+delegate on phones, inside the 33 ms frame budget. Worth revisiting only if real-device testing
+shows jank on mid-range Android.
+
+### Real-device checklist
+
+`npm run dev:https`, then open `https://<your-PC-IP>:5173/demo/shop.html` on the phone. In the
+fitting lab, `?adaptive` plus the debug overlay shows the level and fps live.
+
+- **iPhone (Safari):**
+  - The permission prompt appears after **Start camera**.
+  - Live within a few seconds.
+  - Turning the head: the far temple hides.
+  - Photo Save/Share works.
+  - Switching apps turns the camera off.
+- **Mid-range Android (Chrome):**
+  - Steady motion with no stutter.
+  - Watch whether the quality level drops; that is expected on weak GPUs.
+- **Desktop Chrome/Edge/Firefox/Safari:** the same flow.
+- **Slow network** (DevTools → Network → Fast 4G): the intro → live wait, and the loading message.
+
 ## Layout
 
 ```
 src/camera/      camera access, errors, switching
 src/tracking/    FaceTracker, CameraModel, PoseSolver, TrueSizeEstimator, TrackingLoop, canonical face data
-src/app/         TryOnEngine (whole pipeline, UI-independent), face guidance hints
+src/app/         TryOnEngine (whole pipeline, UI-independent), adaptive-quality governor, face guidance hints
 src/ui/          customer modal (shadow DOM), strings
 src/vto.ts       public entry: createVirtualTryOn(), data-vto-* buttons
 src/render/      renderer, GLB model + variants, face rig, live occluder, soft occlusion, contact shadows, light
 src/product/     catalogue types, calibration, sanitising
 src/debug/       debug overlay + HUD
-src/utils/       One-Euro filters
+src/utils/       One-Euro filters, allocation-free math
 demo/            demo store (customer modal), fitting lab, 3D fit preview, tracking lab
 public/models/   generated dev GLBs        public/products/  catalogue JSON
 docs/            MODEL_SPEC.md (GLB contract for real models)
-tests/           tracking benchmark, render tests, modal tests, screenshot tool
-tools/           MediaPipe vendoring, canonical face converter, parametric glasses generator
+tests/           unit, tracking benchmark, render, modal, perf/memory, production-build tests; screenshot tool
+tools/           MediaPipe vendoring, canonical face converter, parametric glasses generator, model optimiser
 ```
 
 The canonical face model (`tools/data/canonical_face_model.obj`, generated

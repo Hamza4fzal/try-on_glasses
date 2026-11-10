@@ -10,7 +10,13 @@ exactly, so open one in Blender as a reference.
 - **glTF 2.0 binary (`.glb`)**, one pair of glasses per file, with textures embedded.
 - Must pass the [Khronos glTF validator](https://github.khronos.org/glTF-Validator/) with 0 errors.
   `npm run test:render` checks every file in `public/models`.
-- Budget: aim for ≤ 60k triangles and ≤ 2.5 MB per model, with textures ≤ 1024².
+- Budget: aim for ≤ 60k triangles and ≤ 2.5 MB per model **as exported**, with textures ≤ 1024².
+- **Optimise before publishing:** `npm run optimize-model -- exported.glb public/models/name.glb`.
+  - It quantises and meshopt-compresses the geometry, converts textures to WebP and validates
+    the result.
+  - Typically 3–4× smaller, with fit and look unchanged.
+  - It needs unique names for materials that use `KHR_materials_volume`.
+  - `npm run test:render` expects shipped models to be optimised and under 700 KB.
 
 ## Units and axes
 
