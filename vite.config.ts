@@ -1,9 +1,13 @@
 import { resolve } from 'node:path';
+import basicSsl from '@vitejs/plugin-basic-ssl';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+// `vite --mode https` serves over HTTPS with a self-signed certificate so phones on the same
+// network can use the camera (browsers only allow getUserMedia on HTTPS or localhost).
+export default defineConfig(({ mode }) => ({
   // Relative base so the built bundle can later be served from a WordPress plugin directory.
   base: './',
+  plugins: mode === 'https' ? [basicSsl()] : [],
   server: { host: true, port: 5173 },
   preview: { host: true, port: 4173 },
   build: {
@@ -15,4 +19,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
