@@ -17,7 +17,7 @@ const COPY: Record<string, { kind: string; desc: string }> = {
 
 const vto = await createVirtualTryOn({
   catalogUrl: new URL('../products/products.json', location.href).href,
-  assetBase: import.meta.env.BASE_URL,
+  assetBase: new URL('../', import.meta.url).href, // site root (see demo/tracking.ts)
   quality: (params.get('quality') as 'high' | 'low' | null) ?? 'auto',
   delegate: params.get('delegate') === 'CPU' ? 'CPU' : 'auto',
   preserveDrawingBuffer: params.has('capture'),

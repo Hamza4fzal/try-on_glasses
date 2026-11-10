@@ -20,10 +20,11 @@
     "test:tracking:sweep": "node tests/run-tracking.mjs --sweep",
     "test:render": "node tests/run-render.mjs",
     "test:modal": "node tests/run-modal.mjs",
-    "test": "npm run test:unit && npm run test:tracking && npm run test:render && npm run test:modal",
+    "test": "npm run test:unit && npm run test:tracking && npm run test:render && npm run test:modal && npm run test:perf && npm run test:dist",
     "shots": "node tests/shots.mjs",
     "test:unit": "node tests/run-unit.mjs",
-    "test:perf": "node tests/run-perf.mjs"
+    "test:perf": "node tests/run-perf.mjs",
+    "test:dist": "node tests/run-dist.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.1.1",

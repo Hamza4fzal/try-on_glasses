@@ -15,7 +15,10 @@ const btnSwitch = $<HTMLButtonElement>('switch');
 const btnMesh = $<HTMLButtonElement>('mesh');
 const btnStop = $<HTMLButtonElement>('stop');
 
-const base = import.meta.env.BASE_URL;
+// Site root holding mediapipe/ and models/: one level above this module, both in dev (demo/x.ts)
+// and in the build (assets/x-[hash].js). (BASE_URL is './' with the relative build base — that
+// would resolve against the page, demo/, and 404.)
+const base = new URL('../', import.meta.url).href;
 const camera = new CameraController($<HTMLVideoElement>('video'));
 const tracker = new FaceTracker();
 const overlay = new DebugOverlay($<HTMLCanvasElement>('overlay'), $('hud'));
