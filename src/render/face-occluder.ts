@@ -19,6 +19,7 @@ import type { TrackerFrame } from '../tracking/face-tracker';
 import type { FacePose } from '../tracking/pose-solver';
 import { LM } from '../tracking/landmarks';
 import { HEAD_MODEL } from './head-model';
+import { len3 } from '../utils/fast-math';
 
 /** Max per-vertex deviation of the live face from the canonical shape (cm) — rejects outliers. */
 const MAX_DEVIATION = 1.6;
@@ -116,7 +117,7 @@ export class FaceOccluder {
 
     const c = CANONICAL_POSITIONS;
     const a = LM.rightFaceEdge * 3, b = LM.leftFaceEdge * 3;
-    this.canonWidth = Math.hypot(c[a] - c[b], c[a + 1] - c[b + 1], c[a + 2] - c[b + 2]);
+    this.canonWidth = len3(c[a] - c[b], c[a + 1] - c[b + 1], c[a + 2] - c[b + 2]);
     this.group.visible = false;
   }
 
@@ -172,7 +173,7 @@ export class FaceOccluder {
       // Head width from the face outline at cheekbone level, only from near-frontal, confident views.
       if (Math.abs(pose.yawDeg) < 15 && Math.abs(pose.pitchDeg) < 20 && pose.confidence > 0.5) {
         const p = LM.rightFaceEdge * 3, q = LM.leftFaceEdge * 3;
-        const w = Math.hypot(C[p] + d[p] - C[q] - d[q], C[p + 1] + d[p + 1] - C[q + 1] - d[q + 1], C[p + 2] + d[p + 2] - C[q + 2] - d[q + 2]);
+        const w = len3(C[p] + d[p] - C[q] - d[q], C[p + 1] + d[p + 1] - C[q + 1] - d[q + 1], C[p + 2] + d[p + 2] - C[q + 2] - d[q + 2]);
         const r = Math.min(HEAD_WIDTH_RANGE[1], Math.max(HEAD_WIDTH_RANGE[0], w / this.canonWidth));
         this.headWidthRatio += (r - this.headWidthRatio) * (pose.reacquired ? 0.3 : 0.04);
       }

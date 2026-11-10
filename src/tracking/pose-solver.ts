@@ -4,6 +4,7 @@ import { CANONICAL_POSITIONS } from './canonical-face-data';
 import { CameraModel } from './camera-model';
 import type { TrackerFrame } from './face-tracker';
 import { LM } from './landmarks';
+import { len2 } from '../utils/fast-math';
 
 /**
  * PoseSolver — turns raw Face Landmarker output into a stable, landmark-locked face pose.
@@ -216,8 +217,8 @@ export class PoseSolver {
     cxP /= N_EYE; cyP /= N_EYE; cxO /= N_EYE; cyO /= N_EYE;
     let spreadP = 0, spreadO = 0;
     for (let k = 0; k < N_EYE; k++) {
-      spreadP += Math.hypot(this.predPx[k * 2] - cxP, this.predPx[k * 2 + 1] - cyP);
-      spreadO += Math.hypot(this.obsPx[k * 2] - cxO, this.obsPx[k * 2 + 1] - cyO);
+      spreadP += len2(this.predPx[k * 2] - cxP, this.predPx[k * 2 + 1] - cyP);
+      spreadO += len2(this.obsPx[k * 2] - cxO, this.obsPx[k * 2 + 1] - cyO);
     }
     if (spreadP < 1e-3 || spreadO < 1e-3) return pose;
     const r = spreadO / spreadP;
@@ -276,7 +277,7 @@ export class PoseSolver {
       const dy = this.tmpUV.y * H - this.obsPx[k * 2 + 1];
       errSq += dx * dx + dy * dy;
     }
-    const eyeSpan = Math.hypot(
+    const eyeSpan = len2(
       (L[LM.leftEyeOuter * 3] - L[LM.rightEyeOuter * 3]) * W,
       (L[LM.leftEyeOuter * 3 + 1] - L[LM.rightEyeOuter * 3 + 1]) * H,
     );

@@ -4,6 +4,7 @@ import { LM } from '../tracking/landmarks';
 import { canonical, type FacePose } from '../tracking/pose-solver';
 import type { GlassesModel } from './glasses-model';
 import { HEAD_MODEL } from './head-model';
+import { len2 } from '../utils/fast-math';
 
 const DEG = Math.PI / 180;
 
@@ -171,14 +172,14 @@ export class GlassesRig {
     for (const t of model.temples) {
       const r0 = t.restDir;
       const theta0 = Math.atan2(t.side * r0.x, -r0.z);
-      const phi0 = Math.atan2(-r0.y, Math.hypot(r0.x, r0.z));
+      const phi0 = Math.atan2(-r0.y, len2(r0.x, r0.z));
       let theta = theta0, phi = phi0;
       const fit = this.templeFit[t.side === 1 ? 0 : 1];
       fit.clamped = false;
       if (c.templeAutoFit) {
         this.target.set(t.side * ear.x * this.headWidthScale, ear.y, ear.z).applyMatrix4(this.Ginv).sub(t.node.position);
         const want = Math.atan2(t.side * this.target.x, -this.target.z);
-        const wantPhi = Math.atan2(-this.target.y, Math.hypot(this.target.x, this.target.z));
+        const wantPhi = Math.atan2(-this.target.y, len2(this.target.x, this.target.z));
         theta = clamp(want, theta0 + SPREAD_RANGE[0] * DEG, theta0 + SPREAD_RANGE[1] * DEG);
         phi = clamp(wantPhi, phi0 + DROOP_RANGE[0] * DEG, phi0 + DROOP_RANGE[1] * DEG);
         fit.clamped = theta !== want || phi !== wantPhi;

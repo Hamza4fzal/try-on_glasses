@@ -87,6 +87,10 @@ export class TryOnEngine {
   variant: ProductVariant | null = null;
   /** Rendered frames per second (≈ tracked fps). */
   renderFps = 0;
+  /** Frames tracked + rendered since creation. */
+  frameCount = 0;
+  /** Main-thread time per frame after inference (occluder, rig, shadows, render submit), EMA ms. */
+  frameMs = 0;
   /** Adaptive quality on/off. Manually choosing occlusion or shadows turns it off. */
   adaptive: boolean;
   readonly governor: PerformanceGovernor;
@@ -375,6 +379,8 @@ export class TryOnEngine {
 
     this.guidance.update(now, frame, pose, this.view.visibleRect, this.light.sceneLuminance);
     this.fpsCount++;
+    this.frameCount++;
+    this.frameMs += (performance.now() - now - this.frameMs) * 0.1;
     if (now - this.fpsT0 >= 1000) {
       this.renderFps = (this.fpsCount * 1000) / (now - this.fpsT0);
       this.fpsCount = 0;

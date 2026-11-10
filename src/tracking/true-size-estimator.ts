@@ -3,6 +3,7 @@ import type { CameraModel } from './camera-model';
 import type { TrackerFrame } from './face-tracker';
 import { IRIS_DIAMETER_MM, LM } from './landmarks';
 import { canonical, type FacePose } from './pose-solver';
+import { len2 } from '../utils/fast-math';
 
 /**
  * Estimates the wearer's real face size relative to MediaPipe's canonical face.
@@ -127,23 +128,33 @@ export class TrueSizeEstimator {
     this.a.copy(p).applyMatrix4(pose.faceMatrix);
     this.b.copy(p).setX(p.x + 1).applyMatrix4(pose.faceMatrix);
     if (!cam.project(this.a, this.uvA) || !cam.project(this.b, this.uvB)) return 0;
-    return Math.hypot((this.uvB.x - this.uvA.x) * cam.frameWidth, (this.uvB.y - this.uvA.y) * cam.frameHeight);
+    return len2((this.uvB.x - this.uvA.x) * cam.frameWidth, (this.uvB.y - this.uvA.y) * cam.frameHeight);
   }
 
+  /** Insertion sort into the preallocated buffer (n ≤ window size; no subarray/sort garbage). */
   private median(): number {
     const n = this.sampleCount;
-    for (let i = 0; i < n; i++) this.sorted[i] = this.samples[i];
-    const view = this.sorted.subarray(0, n);
-    view.sort();
-    return n % 2 ? view[(n - 1) >> 1] : (view[n / 2 - 1] + view[n / 2]) / 2;
+    const s = this.sorted;
+    for (let i = 0; i < n; i++) {
+      const x = this.samples[i];
+      let j = i - 1;
+      while (j >= 0 && s[j] > x) {
+        s[j + 1] = s[j];
+        j--;
+      }
+      s[j + 1] = x;
+    }
+    return n % 2 ? s[(n - 1) >> 1] : (s[n / 2 - 1] + s[n / 2]) / 2;
   }
 }
 
 /** Mean of the two ring diameters (horizontal pair 0–2, vertical pair 1–3), in pixels. */
 function irisDiameterPx(L: Float32Array, ring: readonly number[], W: number, H: number): number {
-  const d = (i: number, j: number) =>
-    Math.hypot((L[ring[i] * 3] - L[ring[j] * 3]) * W, (L[ring[i] * 3 + 1] - L[ring[j] * 3 + 1]) * H);
-  return (d(0, 2) + d(1, 3)) / 2;
+  return (ringDist(L, ring[0], ring[2], W, H) + ringDist(L, ring[1], ring[3], W, H)) / 2;
+}
+
+function ringDist(L: Float32Array, a: number, b: number, W: number, H: number): number {
+  return len2((L[a * 3] - L[b * 3]) * W, (L[a * 3 + 1] - L[b * 3 + 1]) * H);
 }
 
 function eyeCentre(a: number, b: number, c: number, d: number, out: Vector3, tmp: Vector3): Vector3 {

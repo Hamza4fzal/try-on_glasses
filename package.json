@@ -22,7 +22,8 @@
     "test:modal": "node tests/run-modal.mjs",
     "test": "npm run test:unit && npm run test:tracking && npm run test:render && npm run test:modal",
     "shots": "node tests/shots.mjs",
-    "test:unit": "node tests/run-unit.mjs"
+    "test:unit": "node tests/run-unit.mjs",
+    "test:perf": "node tests/run-perf.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.1.1",
