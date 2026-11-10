@@ -37,11 +37,16 @@ export interface PoseSolverConfig {
   holdMs: number;
 }
 
+/**
+ * Filter defaults were chosen by grid search (tests/run-tracking.mjs --sweep) on recorded tracker
+ * output with injected webcam-like noise, picking the point that meets every jitter AND lag target
+ * with margin. Re-validate on real cameras before changing.
+ */
 export const DEFAULT_POSE_SOLVER_CONFIG: PoseSolverConfig = {
   anchorBlend: 0.5,
-  positionFilter: { minCutoff: 1.5, beta: 0.012, dCutoff: 1.0 },
-  depthFilter: { minCutoff: 0.8, beta: 2.0, dCutoff: 1.0 },
-  rotationFilter: { minCutoff: 1.4, beta: 3.5, dCutoff: 1.0 },
+  positionFilter: { minCutoff: 0.8, beta: 0.05, dCutoff: 4.0 },
+  depthFilter: { minCutoff: 0.5, beta: 10, dCutoff: 2.5 },
+  rotationFilter: { minCutoff: 0.8, beta: 6, dCutoff: 2.5 },
   scaleFilter: { minCutoff: 0.3, beta: 0, dCutoff: 1.0 },
   holdMs: 180,
 };
