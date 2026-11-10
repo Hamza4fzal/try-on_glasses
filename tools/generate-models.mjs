@@ -5,12 +5,16 @@
 // nose rest, separate frame / lens / temple / hinge / pad meshes, temples pivoted at the hinges,
 // and colourways as KHR_materials_variants. Every file is checked with the Khronos validator.
 //
-// Usage: node tools/generate-models.mjs [styleId ...]
+// The shipped files are web-optimised by tools/optimize-model.mjs (meshopt geometry, WebP
+// textures); --raw writes the unoptimised authoring output instead.
+//
+// Usage: node tools/generate-models.mjs [styleId ...] [--raw]
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import validator from 'gltf-validator';
 import { GltfBuilder } from './glasses/gltf-builder.mjs';
+import { optimizeGlb, validateGlb } from './optimize-model.mjs';
 import { VARIANTS, materialRegistry } from './glasses/materials.mjs';
 import { STYLES, buildStyle } from './glasses/styles.mjs';
 
@@ -64,18 +68,26 @@ function toGLB(id) {
 async function main() {
   const ids = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   const list = ids.length ? ids : Object.keys(STYLES);
+  const keepRaw = process.argv.includes('--raw');
   mkdirSync(outDir, { recursive: true });
   let failed = 0;
   for (const id of list) {
     const t0 = performance.now();
-    const { glb, meta } = toGLB(id);
-    const report = await validator.validateBytes(new Uint8Array(glb), { maxIssues: 50 });
+    const { glb: raw, meta } = toGLB(id);
+    // Validate the authored file, then ship the web-optimised one (validated again).
+    const report = await validator.validateBytes(new Uint8Array(raw), { maxIssues: 50 });
     const { numErrors, numWarnings, numInfos } = report.issues;
+    let glb = raw;
+    if (!numErrors && !keepRaw) {
+      glb = await optimizeGlb(raw);
+      await validateGlb(glb, id);
+    }
     const file = join(outDir, `${id}.glb`);
     writeFileSync(file, glb);
     const info = report.info;
     console.log(
-      `${id.padEnd(6)} ${(glb.length / 1024).toFixed(0).padStart(5)} KB  ${String(info.totalVertexCount).padStart(6)} verts  ` +
+      `${id.padEnd(6)} ${(raw.length / 1024).toFixed(0).padStart(5)} KB → ${(glb.length / 1024).toFixed(0).padStart(4)} KB  ` +
+        `${String(info.totalVertexCount).padStart(6)} verts  ` +
         `${String(info.totalTriangleCount).padStart(6)} tris  ${info.materialCount} materials  ` +
         `${meta.lensWidthMm}□${meta.bridgeMm}-${meta.templeLengthMm}, frame ${meta.frameWidthMm} mm  ` +
         `validator: ${numErrors} errors, ${numWarnings} warnings, ${numInfos} infos  (${(performance.now() - t0).toFixed(0)} ms)`,

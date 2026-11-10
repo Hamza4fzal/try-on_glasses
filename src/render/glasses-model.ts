@@ -12,6 +12,7 @@ import {
   type Group,
 } from 'three';
 import { GLTFLoader, type GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { MaterialOverride } from '../product/catalog';
 
 /**
@@ -56,6 +57,14 @@ interface SlotMesh {
   slot: string;
   defaultMaterial: Material;
   mappings: VariantMapping[];
+}
+
+// Shared loader. Production models are meshopt-compressed (tools/optimize-model.mjs); the decoder
+// is a small inline WebAssembly module bundled with three.js — no extra request.
+let loader: GLTFLoader | null = null;
+function gltfLoader(): GLTFLoader {
+  loader ??= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+  return loader;
 }
 
 const TEMPLE_NAME = { L: /^temple[_-]?l(eft)?$/i, R: /^temple[_-]?r(ight)?$/i };
@@ -119,7 +128,7 @@ export class GlassesModel {
    *   Needed because glTF's KHR_materials_volume attenuationDistance is in world units.
    */
   static async load(url: string, quality: RenderQuality = 'high', sceneUnitsPerMetre = 100): Promise<GlassesModel> {
-    const gltf = await new GLTFLoader().loadAsync(url);
+    const gltf = await gltfLoader().loadAsync(url);
     let meta: VtoModelMeta = {};
     gltf.scene.traverse((o) => {
       if (o.userData?.vto && typeof o.userData.vto === 'object') meta = o.userData.vto as VtoModelMeta;

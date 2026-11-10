@@ -33,6 +33,30 @@ for (const f of models) {
   const bytes = new Uint8Array(readFileSync(join('public/models', f)));
   const report = await validator.validateBytes(bytes, { maxIssues: 20 });
   check(report.issues.numErrors === 0 && report.issues.numWarnings === 0, `${f}: glTF validator 0 errors / 0 warnings`);
+  // Web-optimised (tools/optimize-model.mjs) and the tinted-volume thickness survived quantisation.
+  const json = JSON.parse(Buffer.from(bytes.subarray(20, 20 + new DataView(bytes.buffer, bytes.byteOffset).getUint32(12, true))).toString());
+  const parent = new Map();
+  json.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => parent.set(c, i)));
+  const worldScale = (i) => (i === undefined ? 1 : (json.nodes[i].scale?.[0] ?? 1) * worldScale(parent.get(i)));
+  const thicknessMm = [];
+  json.nodes.forEach((n, i) => {
+    if (n.mesh === undefined) return;
+    for (const p of json.meshes[n.mesh].primitives) {
+      const mats = [p.material, ...(p.extensions?.KHR_materials_variants?.mappings ?? []).map((m) => m.material)];
+      for (const m of mats) {
+        const vol = json.materials[m]?.extensions?.KHR_materials_volume;
+        if (vol?.thicknessFactor) thicknessMm.push(vol.thicknessFactor * worldScale(i) * 1000);
+      }
+    }
+  });
+  check(
+    json.extensionsUsed?.includes('EXT_meshopt_compression') && bytes.length < 700 * 1024,
+    `${f}: web-optimised (${(bytes.length / 1024).toFixed(0)} KB, meshopt)`,
+  );
+  check(
+    thicknessMm.every((t) => t >= 0.5 && t <= 12),
+    `${f}: volume thickness in world units plausible (${[...new Set(thicknessMm.map((t) => t.toFixed(2)))].join(', ') || 'none'} mm)`,
+  );
 }
 
 const env = await startEnv();

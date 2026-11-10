@@ -14,6 +14,7 @@
     "vendor": "node tools/vendor-mediapipe.mjs",
     "canonical-face": "node tools/build-canonical-face.mjs",
     "models": "node tools/generate-models.mjs",
+    "optimize-model": "node tools/optimize-model.mjs",
     "thumbs": "node tools/render-thumbs.mjs",
     "test:tracking": "node tests/run-tracking.mjs",
     "test:tracking:sweep": "node tests/run-tracking.mjs --sweep",
@@ -27,10 +28,15 @@
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
     "@types/three": "0.186.0",
     "@vitejs/plugin-basic-ssl": "2.3.0",
     "gltf-validator": "2.0.0-dev.3.10",
+    "meshoptimizer": "1.3.0",
     "puppeteer-core": "25.16.0",
+    "sharp": "0.35.5",
     "typescript": "5.9.3",
     "vite": "7.3.8"
   }
