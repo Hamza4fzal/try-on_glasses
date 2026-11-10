@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { CameraController, CameraError, type CameraErrorCode } from '../camera/camera-controller';
+import { CameraController, CameraError } from '../camera/camera-controller';
 import type { ProductConfig, ProductVariant } from '../product/catalog';
 import { ContactShadows } from '../render/contact-shadows';
 import { FaceOccluder } from '../render/face-occluder';
@@ -12,20 +12,10 @@ import { FaceTracker, type DelegatePreference, type TrackerFrame } from '../trac
 import type { FacePose } from '../tracking/pose-solver';
 import { TrackingLoop, type TrackingListener } from '../tracking/tracking-loop';
 import type { TrueSizeEstimator } from '../tracking/true-size-estimator';
+import { EngineError } from './engine-errors';
 import { FaceGuidance } from './guidance';
 
-export type EngineErrorCode = CameraErrorCode | 'webgl-unavailable' | 'tracking-load-failed' | 'model-load-failed';
-
-export class EngineError extends Error {
-  constructor(
-    readonly code: EngineErrorCode,
-    message: string,
-    override readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = 'EngineError';
-  }
-}
+export { EngineError, type EngineErrorCode } from './engine-errors';
 
 export type OcclusionMode = 'soft' | 'hard' | 'off';
 
@@ -38,6 +28,11 @@ export interface TryOnEngineOptions {
   /** Only for tests that read pixels outside the render task. */
   preserveDrawingBuffer?: boolean;
   maxPixelRatio?: number;
+  /**
+   * Camera to use. The UI owns it so it can request access inside the click that asked for it
+   * while this engine is still downloading. Default: a new one.
+   */
+  camera?: CameraController;
 }
 
 /** True when this browser can create a WebGL2 context (three.js requires WebGL2). */
@@ -104,7 +99,7 @@ export class TryOnEngine {
   ) {
     if (!webglAvailable()) throw new EngineError('webgl-unavailable', 'WebGL 2 is not available in this browser.');
     this.quality = !opts.quality || opts.quality === 'auto' ? autoQuality() : opts.quality;
-    this.camera = new CameraController();
+    this.camera = opts.camera ?? new CameraController();
     this.loop = new TrackingLoop(this.tracker, this.camera.video);
     try {
       this.view = new TryOnRenderer(canvas, { preserveDrawingBuffer: opts.preserveDrawingBuffer, maxPixelRatio: opts.maxPixelRatio });
@@ -202,10 +197,10 @@ export class TryOnEngine {
 
   // ------------------------------------------------------------------ camera / tracking
 
-  /** Requests the camera. MUST be called from a user action (click/tap). */
+  /** Requests the camera (no-op if it is already running). MUST be called from a user action. */
   async startCamera(): Promise<void> {
     try {
-      await this.camera.start({ facingMode: 'user' });
+      if (!this.camera.active) await this.camera.start({ facingMode: 'user' });
     } catch (err) {
       if (err instanceof CameraError) throw err;
       throw new CameraError('unknown', 'The camera could not be started.', err);

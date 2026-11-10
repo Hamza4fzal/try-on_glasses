@@ -46,6 +46,7 @@ export class CameraController {
   private currentFacing: FacingMode = 'user';
   private currentDeviceId: string | null = null;
   private onEndedHandler = () => this.handleTrackEnded();
+  private gen = 0;
 
   /** Called if the stream dies while running. */
   onInterrupted: ((err: CameraError) => void) | null = null;
@@ -57,6 +58,14 @@ export class CameraController {
     this.video.setAttribute('webkit-playsinline', '');
     this.video.muted = true;
     this.video.autoplay = true;
+  }
+
+  /**
+   * Changes on every start()/stop(). A caller that started the camera can compare it later to
+   * know whether the running stream is still the one it asked for.
+   */
+  get generation(): number {
+    return this.gen;
   }
 
   get active(): boolean {
@@ -99,6 +108,13 @@ export class CameraController {
     const unsupported = CameraController.checkSupport();
     if (unsupported) throw unsupported;
     this.stop();
+    const gen = this.gen;
+    // stop() or a newer start() while the browser was asking: never keep a stream nobody wants.
+    const superseded = (s: MediaStream | null) => {
+      if (gen === this.gen) return;
+      for (const t of s?.getTracks() ?? []) t.stop();
+      throw new CameraError('interrupted', 'Camera start was cancelled.');
+    };
 
     const idealHeight = opts.idealHeight ?? 720;
     const base: MediaTrackConstraints = {
@@ -127,6 +143,7 @@ export class CameraController {
       }
     }
 
+    superseded(stream);
     this.stream = stream;
     const track = stream.getVideoTracks()[0];
     const settings = track?.getSettings() ?? {};
@@ -143,7 +160,9 @@ export class CameraController {
       this.stop();
       throw new CameraError('unknown', 'The camera stream could not be played.', err);
     }
+    superseded(null);
     await waitForDimensions(this.video);
+    superseded(null);
   }
 
   /** Cycles to the next camera (by deviceId when known, otherwise by flipping facingMode). */
@@ -159,6 +178,7 @@ export class CameraController {
   }
 
   stop(): void {
+    this.gen++;
     if (this.stream) {
       for (const track of this.stream.getTracks()) {
         track.removeEventListener('ended', this.onEndedHandler);

@@ -66,6 +66,8 @@ export function stubCameraScript({ drift = 0 } = {}) {
     const streams = [];
     window.__streams = streams;
     navigator.mediaDevices.getUserMedia = async () => {
+      // window.__gumDelay simulates the time a customer takes to answer the permission prompt.
+      if (window.__gumDelay) await new Promise((r) => setTimeout(r, window.__gumDelay));
       const img = new Image();
       img.src = '/test-assets/portrait.jpg';
       await img.decode();

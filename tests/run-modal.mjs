@@ -221,6 +221,62 @@ try {
     await p.close();
   }
 
+  // ------------------------------------------------------------ lazy loading + camera race
+  console.log('\n=== Lazy loading & camera races ===');
+  {
+    const p = await env.browser.newPage();
+    const errs = watchErrors(p, 'lazy');
+    await p.evaluateOnNewDocument(stubCameraScript());
+    await p.evaluateOnNewDocument(Q);
+    const urls = [];
+    p.on('request', (r) => urls.push(r.url()));
+    const HEAVY_JS = /try-on-engine|try-on-modal|[/._]three[/._@]|tasks-vision/;
+    const HEAVY_DATA = /\.wasm|\.task|\.glb/;
+    await p.goto(`${env.url}demo/shop.html?delegate=CPU`);
+    await p.waitForFunction(() => document.title.includes('(ready)'), { polling: 100, timeout: 60000 });
+    await sleep(800);
+    const atLoad = urls.filter((u) => HEAVY_JS.test(u) || HEAVY_DATA.test(u));
+    check(atLoad.length === 0, `product page loads no 3D engine / tracking / models up front (${atLoad.length} requests)`);
+
+    await p.hover('#try');
+    await p.waitForFunction(() => performance.getEntriesByType('resource').some((e) => /try-on-engine/.test(e.name)), { polling: 100, timeout: 20000 });
+    await sleep(500);
+    check(
+      urls.some((u) => /try-on-modal/.test(u)) && urls.some((u) => /try-on-engine/.test(u)) && !urls.some((u) => HEAVY_DATA.test(u)),
+      'hovering the button prefetches the try-on code only (no tracking data, no models)',
+    );
+
+    await p.click('#try');
+    await p.waitForFunction(() => window.__visible('.start'), { polling: 100, timeout: 10000 });
+    await p.waitForFunction(() => window.__shop.vto._modal?.tryOnEngine?.trackingReady && window.__shop.vto._modal.tryOnEngine.product, { polling: 100, timeout: 90000 });
+    const streams0 = await p.evaluate(() => window.__streams.length);
+    check(
+      urls.some((u) => /\.wasm/.test(u)) && urls.some((u) => /\.task/.test(u)) && urls.some((u) => /\.glb/.test(u)) && streams0 === 0,
+      'opening preloads face tracking + the frame during the intro, still without the camera',
+    );
+
+    // The customer cancels while the permission prompt is open, then starts again: the first
+    // (late) stream must be stopped and never shown.
+    await p.evaluate(() => (window.__gumDelay = 1200));
+    await p.evaluate(() => window.__click('.start'));
+    await p.waitForFunction(() => window.__state() === 'waiting', { polling: 50, timeout: 5000 });
+    await p.evaluate(() => window.__click('.cancel'));
+    await p.evaluate(() => (window.__gumDelay = 0));
+    await p.evaluate(() => window.__click('.start'));
+    await p.waitForFunction(() => window.__state() === 'live', { polling: 100, timeout: 30000 });
+    await sleep(1800); // the first, delayed getUserMedia resolves meanwhile
+    const live = await p.evaluate(() => window.__streams.map((s) => s.getVideoTracks().filter((t) => t.readyState === 'live').length));
+    check(live.length === 2 && live.reduce((a, b) => a + b, 0) === 1, `cancel + restart during the prompt leaves exactly one camera on (${JSON.stringify(live)})`);
+    check(await p.evaluate(() => window.__state() === 'live'), 'try-on still live after the late stream was discarded');
+
+    // Closing while the engine is still loading must also release the camera.
+    await p.evaluate(() => window.__shop.vto.close());
+    const after = await p.evaluate(() => window.__streams.every((s) => s.getTracks().every((t) => t.readyState === 'ended')));
+    check(after, 'all tracks ended after close');
+    check(errs.length === 0, `lazy: no page errors (${errs.length})`);
+    await p.close();
+  }
+
   // ------------------------------------------------------------ phone layout
   console.log('\n=== Phone layout ===');
   {

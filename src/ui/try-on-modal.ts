@@ -1,6 +1,9 @@
-import { EngineError, TryOnEngine, type EngineErrorCode } from '../app/try-on-engine';
+// Only the error classes are imported eagerly: the engine (three.js + MediaPipe, ~800 KB of JS)
+// is a separate chunk, loaded when the try-on is opened (or prefetched on intent, see vto.ts).
+import { EngineError, type EngineErrorCode } from '../app/engine-errors';
 import type { GuidanceHint } from '../app/guidance';
-import { CameraError } from '../camera/camera-controller';
+import type { TryOnEngine } from '../app/try-on-engine';
+import { CameraController, CameraError } from '../camera/camera-controller';
 import type { ProductConfig } from '../product/catalog';
 import type { RenderQuality } from '../render/glasses-model';
 import type { DelegatePreference } from '../tracking/face-tracker';
@@ -34,6 +37,17 @@ export interface TryOnModalOptions {
   preserveDrawingBuffer?: boolean;
 }
 
+let engineModule: Promise<typeof import('../app/try-on-engine')> | null = null;
+
+/** Downloads the engine chunk (idempotent; a failed download can be retried). */
+export function loadEngineModule(): Promise<typeof import('../app/try-on-engine')> {
+  engineModule ??= import('../app/try-on-engine').catch((err) => {
+    engineModule = null;
+    throw new EngineError('tracking-load-failed', 'The try-on could not be downloaded.', err);
+  });
+  return engineModule;
+}
+
 const ICON = {
   close: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   glasses:
@@ -64,12 +78,17 @@ export class TryOnModal {
   private readonly root: ShadowRoot;
   private readonly s: Strings;
   private engine: TryOnEngine | null = null;
+  private enginePromise: Promise<TryOnEngine> | null = null;
+  /** Owned here (not by the engine) so "Start camera" can ask for it while the engine downloads. */
+  private readonly camera = new CameraController();
+  private destroyed = false;
   private stateValue: TryOnState = 'closed';
   private product: ProductConfig | null = null;
   private variantId: string | null = null;
   private opener: HTMLElement | null = null;
   private session = 0;
   private modelPromise: Promise<void> | null = null;
+  private modelProduct: ProductConfig | null = null;
   private photoUrl: string | null = null;
   private photoBlob: Blob | null = null;
   private lastError: { key: ErrorKey; retry: (() => void) | null } | null = null;
@@ -85,6 +104,13 @@ export class TryOnModal {
     this.root = this.host.attachShadow({ mode: 'open' });
     this.root.innerHTML = `<style>${css}</style>${this.template()}`;
     this.bind();
+    this.camera.onInterrupted = () => {
+      this.stopCamera();
+      // In the photo view the picture stays; "Back to try-on" restarts the camera.
+      if (this.stateValue === 'live' || this.stateValue === 'loading') {
+        this.fail(new CameraError('interrupted', 'camera stopped'), () => void this.start());
+      }
+    };
   }
 
   get state(): TryOnState {
@@ -99,6 +125,7 @@ export class TryOnModal {
   // ================================================================== public API
 
   async open(productId: string, options: { variantId?: string; opener?: HTMLElement | null } = {}): Promise<void> {
+    if (this.destroyed) throw new Error('The try-on was destroyed');
     const product = this.opts.products.find((p) => p.id === productId && p.enabled);
     if (!product) throw new Error(`Unknown product "${productId}"`);
     this.opener = options.opener ?? (document.activeElement as HTMLElement | null);
@@ -114,17 +141,24 @@ export class TryOnModal {
       this.emit({ type: 'open', productId });
     }
     this.setProduct(product, options.variantId ?? null);
-
-    if (!this.engine && !this.createEngine()) return;
-    this.engine!.preloadTracking().catch(() => undefined); // surfaced when the customer starts
-    this.loadModel();
     if (wasClosed || this.stateValue === 'error') this.show('intro');
+
+    // While the customer reads the intro: engine chunk → face tracking (wasm + model) + 3D model.
+    const session = this.session;
+    try {
+      const e = await this.ensureEngine();
+      e.preloadTracking().catch(() => undefined); // surfaced when the customer starts
+      this.loadModel();
+    } catch (err) {
+      // Only interrupt the intro; if the customer already pressed Start, start() reports it.
+      if (session === this.session && this.stateValue === 'intro') this.fail(err, () => void this.start());
+    }
   }
 
   close(): void {
     if (this.stateValue === 'closed') return;
     this.session++;
-    this.engine?.stop();
+    this.stopCamera();
     this.clearPhoto();
     this.stateValue = 'closed';
     this.host.hidden = true;
@@ -140,6 +174,7 @@ export class TryOnModal {
   /** Frees everything (camera, GPU, tracking). The modal can't be reopened afterwards. */
   destroy(): void {
     this.close();
+    this.destroyed = true;
     this.resizeObs?.disconnect();
     this.engine?.dispose();
     this.engine = null;
@@ -148,27 +183,39 @@ export class TryOnModal {
 
   // ================================================================== engine
 
-  private createEngine(): boolean {
-    const canvas = this.$<HTMLCanvasElement>('.gl');
-    try {
-      this.engine = new TryOnEngine(canvas, {
-        assetBase: this.opts.assetBase,
-        quality: this.opts.quality ?? 'auto',
-        delegate: this.opts.delegate,
-        preserveDrawingBuffer: this.opts.preserveDrawingBuffer,
+  /** Camera off + tracking stopped, whether or not the engine exists yet. */
+  private stopCamera(): void {
+    this.engine?.stop();
+    this.camera.stop();
+  }
+
+  /** Downloads the engine chunk and creates the engine once (a failure can be retried). */
+  private ensureEngine(): Promise<TryOnEngine> {
+    if (this.engine) return Promise.resolve(this.engine);
+    this.enginePromise ??= loadEngineModule()
+      .then((mod) => {
+        if (this.destroyed) throw new Error('The try-on was destroyed');
+        return this.engine ?? this.createEngine(mod);
+      })
+      .finally(() => {
+        this.enginePromise = null;
       });
-    } catch (err) {
-      this.fail(err, null);
-      return false;
-    }
-    const e = this.engine;
+    return this.enginePromise;
+  }
+
+  private createEngine(mod: typeof import('../app/try-on-engine')): TryOnEngine {
+    const canvas = this.$<HTMLCanvasElement>('.gl');
+    const e = new mod.TryOnEngine(canvas, {
+      assetBase: this.opts.assetBase,
+      quality: this.opts.quality ?? 'auto',
+      delegate: this.opts.delegate,
+      preserveDrawingBuffer: this.opts.preserveDrawingBuffer,
+      camera: this.camera,
+    }); // throws EngineError('webgl-unavailable')
+    this.engine = e;
     e.guidance.onChange = (h) => this.showHint(h);
-    e.camera.onInterrupted = () => {
-      e.stop();
-      this.fail(new CameraError('interrupted', 'camera stopped'), () => void this.start());
-    };
     e.view.onContextLost = () => {
-      e.stop();
+      this.stopCamera();
       this.lastError = null;
       this.showError('context-lost', () => this.rebuildEngine());
     };
@@ -177,7 +224,7 @@ export class TryOnModal {
       if (this.engine && !this.engine.running && this.stateValue === 'photo') this.engine.renderStill();
     });
     this.resizeObs.observe(this.$('.stage'));
-    return true;
+    return e;
   }
 
   /** After a WebGL context loss: new canvas + engine (the old context may never come back). */
@@ -188,9 +235,7 @@ export class TryOnModal {
     const fresh = document.createElement('canvas');
     fresh.className = 'gl';
     old.replaceWith(fresh);
-    if (!this.createEngine()) return;
     this.modelPromise = null;
-    this.loadModel();
     void this.start();
   }
 
@@ -198,12 +243,13 @@ export class TryOnModal {
     const e = this.engine;
     const p = this.product;
     if (!e || !p) return;
-    if (e.product === p && this.modelPromise) {
-      if (this.variantId && e.variant?.id !== this.variantId) void e.setVariant(this.variantId);
+    if (this.modelPromise && this.modelProduct === p) {
+      if (e.product === p && this.variantId && e.variant?.id !== this.variantId) void e.setVariant(this.variantId);
       return;
     }
     const promise = e.loadProduct(p, this.variantId ?? undefined);
     this.modelPromise = promise;
+    this.modelProduct = p;
     promise.catch(() => {
       if (this.modelPromise === promise) this.modelPromise = null; // retry on next start
     });
@@ -211,38 +257,57 @@ export class TryOnModal {
 
   // ================================================================== flow
 
-  /** "Start camera": must run inside the click handler (user gesture → permission prompt). */
+  /**
+   * "Start camera": runs inside the click handler, and the camera is requested FIRST — before
+   * any await — so the browser sees the user gesture (iOS Safari requires it for the prompt).
+   */
   private async start(): Promise<void> {
-    const e = this.engine;
-    if (!e || !this.product) return;
+    if (!this.product || this.destroyed) return;
     const session = this.session;
     const stale = () => session !== this.session || this.stateValue === 'closed';
+    // A superseded start() (closed, cancelled, tab hidden, started again) stops its own stream
+    // but never a newer session's: the camera generation tells them apart.
+    let ownGen = -1;
+    const abandon = () => {
+      if (ownGen === this.camera.generation) this.stopCamera();
+    };
     this.emit({ type: 'start', productId: this.product.id });
+    const camera = this.camera.active ? Promise.resolve() : this.camera.start({ facingMode: 'user' });
+    const engine = this.ensureEngine();
+    engine.catch(() => undefined); // reported below, after the camera outcome
     // Only show "Allow camera access" if the browser actually stops to ask.
     const askTimer = setTimeout(() => !stale() && this.show('waiting'), 350);
+    let e: TryOnEngine;
     try {
-      await e.startCamera();
+      await camera.catch((err) => {
+        throw err instanceof CameraError ? err : new CameraError('unknown', 'The camera could not be started.', err);
+      });
+      ownGen = this.camera.generation;
+      clearTimeout(askTimer);
+      if (stale()) return abandon();
+      if (!this.engine) this.show('loading', this.s.loading);
+      e = await engine;
+      await e.startCamera(); // camera already running: attaches the video
     } catch (err) {
       clearTimeout(askTimer);
-      e.stop();
-      if (!stale()) this.fail(err, () => void this.start());
+      if (stale()) return abandon();
+      this.stopCamera();
+      this.fail(err, () => void this.start());
       return;
     }
-    clearTimeout(askTimer);
-    if (stale()) return e.stop();
+    if (stale()) return abandon();
     this.$('.gl').classList.toggle('mirror', e.mirrored);
     try {
-      if (!e.trackingReady || !this.modelPromise || e.product !== this.product) {
-        this.show('loading', this.s.loading);
-        if (!this.modelPromise) this.loadModel();
-      }
+      this.loadModel(); // no-op when this product's model is loaded or loading
+      if (!e.trackingReady || e.product !== this.product) this.show('loading', this.s.loading);
       await Promise.all([e.preloadTracking(), this.modelPromise]);
     } catch (err) {
-      e.stop();
-      if (!stale()) this.fail(err, () => void this.start());
+      if (stale()) return abandon();
+      this.stopCamera();
+      this.fail(err, () => void this.start());
       return;
     }
-    if (stale()) return e.stop();
+    if (stale()) return abandon();
     e.startTracking();
     this.show('live');
     this.emit({ type: 'live', productId: this.product.id, variantId: e.variant?.id });
@@ -294,7 +359,7 @@ export class TryOnModal {
   private backToLive(): void {
     this.clearPhoto();
     const e = this.engine;
-    if (e?.camera.active) {
+    if (e && this.camera.active) {
       e.startTracking();
       this.show('live');
     } else {
@@ -557,7 +622,7 @@ export class TryOnModal {
     on('.start', () => void this.start());
     on('.cancel', () => {
       this.session++;
-      this.engine?.stop();
+      this.stopCamera();
       this.show('intro');
     });
     on('.retry', () => {
@@ -613,14 +678,14 @@ export class TryOnModal {
   };
 
   private readonly onVisibility = (): void => {
-    if (!document.hidden || !this.engine) return;
-    // Privacy + battery: never keep the camera on in a background tab.
+    if (!document.hidden) return;
+    // Privacy + battery: never keep the camera on in a background tab (even mid-download).
     if (this.stateValue === 'live' || this.stateValue === 'waiting' || this.stateValue === 'loading') {
       this.session++;
-      this.engine.stop();
+      this.stopCamera();
       this.show('paused');
     } else if (this.stateValue === 'photo') {
-      this.engine.stop(); // keep the photo; "Back to try-on" restarts the camera
+      this.stopCamera(); // keep the photo; "Back to try-on" restarts the camera
     }
   };
 

@@ -1,4 +1,4 @@
-import type { EngineErrorCode } from '../app/try-on-engine';
+import type { EngineErrorCode } from '../app/engine-errors';
 import type { GuidanceHint } from '../app/guidance';
 
 /**
