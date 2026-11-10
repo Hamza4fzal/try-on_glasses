@@ -15,7 +15,10 @@
     "canonical-face": "node tools/build-canonical-face.mjs",
     "models": "node tools/generate-models.mjs",
     "test:tracking": "node tests/run-tracking.mjs",
-    "test:tracking:sweep": "node tests/run-tracking.mjs --sweep"
+    "test:tracking:sweep": "node tests/run-tracking.mjs --sweep",
+    "test:render": "node tests/run-render.mjs",
+    "test": "npm run test:tracking && npm run test:render",
+    "shots": "node tests/shots.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.1.1",
@@ -24,6 +27,7 @@
   "devDependencies": {
     "@types/three": "0.186.0",
     "@vitejs/plugin-basic-ssl": "2.3.0",
+    "gltf-validator": "2.0.0-dev.3.10",
     "puppeteer-core": "25.16.0",
     "typescript": "5.9.3",
     "vite": "7.3.8"

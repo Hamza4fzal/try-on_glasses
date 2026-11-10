@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VTO — 3D fit preview</title>
+    <link rel="stylesheet" href="./lab.css" />
+  </head>
+  <body>
+    <div class="stage"><canvas id="gl" class="gl"></canvas></div>
+    <div class="status" id="status">Loading…</div>
+    <div class="bar">
+      <button data-view="front">Front</button>
+      <button data-view="three">¾</button>
+      <button data-view="side">Side</button>
+      <button data-view="top">Top</button>
+      <button data-view="close">Close-up</button>
+      <button id="spin">Turntable</button>
+    </div>
+    <script type="module" src="./viewer.ts"></script>
+  </body>
+</html>

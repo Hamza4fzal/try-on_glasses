@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "products": [
+    {
+      "id": "aria",
+      "name": "Aria",
+      "sku": "VTO-ARIA-52",
+      "price": "$149",
+      "enabled": true,
+      "model": "../models/aria.glb",
+      "frame": { "lensWidthMm": 52, "bridgeMm": 18, "templeLengthMm": 145, "lensHeightMm": 40 },
+      "calibration": {},
+      "defaultVariant": "havana",
+      "variants": [
+        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana" },
+        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black" },
+        { "id": "crystal", "label": "Crystal clear", "swatch": "#e8edf0", "gltfVariant": "crystal" },
+        { "id": "honey", "label": "Honey tortoise", "swatch": "#c99045", "gltfVariant": "honey" }
+      ]
+    },
+    {
+      "id": "mira",
+      "name": "Mira",
+      "sku": "VTO-MIRA-51",
+      "price": "$159",
+      "enabled": true,
+      "model": "../models/mira.glb",
+      "frame": { "lensWidthMm": 51, "bridgeMm": 19, "templeLengthMm": 140, "lensHeightMm": 38 },
+      "calibration": {},
+      "defaultVariant": "black",
+      "variants": [
+        { "id": "black", "label": "Gloss black", "swatch": "#111111", "gltfVariant": "black" },
+        { "id": "rose", "label": "Rose crystal", "swatch": "#e9a3a8", "gltfVariant": "rose" },
+        { "id": "havana", "label": "Havana tortoise", "swatch": "#6b3410", "gltfVariant": "havana" }
+      ]
+    },
+    {
+      "id": "orbit",
+      "name": "Orbit",
+      "sku": "VTO-ORBIT-49",
+      "price": "$179",
+      "enabled": true,
+      "model": "../models/orbit.glb",
+      "frame": { "lensWidthMm": 49, "bridgeMm": 21, "templeLengthMm": 145, "lensHeightMm": 44 },
+      "calibration": {},
+      "defaultVariant": "gold",
+      "variants": [
+        { "id": "gold", "label": "Gold", "swatch": "#d4a94f", "gltfVariant": "gold" },
+        { "id": "silver", "label": "Silver", "swatch": "#d9d9d6", "gltfVariant": "silver" },
+        { "id": "gunmetal", "label": "Gunmetal", "swatch": "#55585c", "gltfVariant": "gunmetal" },
+        { "id": "matte_black", "label": "Matte black", "swatch": "#1e1e20", "gltfVariant": "matte_black" }
+      ]
+    },
+    {
+      "id": "pilot",
+      "name": "Pilot",
+      "sku": "VTO-PILOT-58",
+      "price": "$189",
+      "enabled": true,
+      "model": "../models/pilot.glb",
+      "frame": { "lensWidthMm": 58, "bridgeMm": 14, "templeLengthMm": 140, "lensHeightMm": 50 },
+      "calibration": {},
+      "defaultVariant": "gold_g15",
+      "variants": [
+        { "id": "gold_g15", "label": "Gold / G-15 green", "swatch": "#d4a94f", "gltfVariant": "gold_g15" },
+        { "id": "silver_gradient", "label": "Silver / grey gradient", "swatch": "#d9d9d6", "gltfVariant": "silver_gradient" },
+        { "id": "gunmetal_mirror", "label": "Gunmetal / blue mirror", "swatch": "#3b5b9a", "gltfVariant": "gunmetal_mirror" }
+      ]
+    }
+  ]
+}

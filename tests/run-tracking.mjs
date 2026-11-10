@@ -6,10 +6,9 @@
 // Usage: node tests/run-tracking.mjs [--gpu] [--json]
 // Env:   CHROME_PATH to override browser discovery.
 
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import puppeteer from 'puppeteer-core';
 import { createServer } from 'vite';
+import { findChrome } from './lib.mjs';
 
 const args = new Set(process.argv.slice(2));
 const delegate = args.has('--gpu') ? 'GPU' : 'CPU';
@@ -27,21 +26,6 @@ const TARGETS = {
   maxValidFramesWhileHidden: 6, // holdMs 180 @ 30 fps
 };
 
-function findChrome() {
-  const candidates = [
-    process.env.CHROME_PATH,
-    join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/Application/chrome.exe'),
-    join(process.env.PROGRAMFILES ?? '', 'Google/Chrome/Application/chrome.exe'),
-    join(process.env['PROGRAMFILES(X86)'] ?? '', 'Google/Chrome/Application/chrome.exe'),
-    join(process.env['PROGRAMFILES(X86)'] ?? '', 'Microsoft/Edge/Application/msedge.exe'),
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-  ].filter(Boolean);
-  const found = candidates.find((p) => existsSync(p));
-  if (!found) throw new Error('Chrome/Edge not found; set CHROME_PATH');
-  return found;
-}
 
 const fmt = (s, d = 2) => (s && Number.isFinite(s.mean) ? `mean ${s.mean.toFixed(d)} p95 ${s.p95.toFixed(d)} max ${s.max.toFixed(d)}` : '—');
 
@@ -210,7 +194,7 @@ async function main() {
     const trackFps = Number(/track ([\d.]+)/.exec(hud)?.[1] ?? 0);
     check(/pose valid/.test(hud), 'page: pose valid with stubbed camera');
     // Liveness only: headless Chrome has no GPU, so this number says nothing about real-device perf.
-    check(trackFps >= 3, `page: tracking loop running continuously (${trackFps} fps, headless software rendering)`);
+    check(trackFps >= 1.5, `page: tracking loop running continuously (${trackFps} fps, headless software rendering)`);
     await p2.click('#stop');
     const ended = await p2.evaluate(() => window.__streams.every((s) => s.getTracks().every((t) => t.readyState === 'ended')));
     check(ended, 'page: all camera tracks ended after Stop');

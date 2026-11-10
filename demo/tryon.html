@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="data:," />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>VTO — Fitting lab</title>
+    <link rel="stylesheet" href="./lab.css" />
+  </head>
+  <body>
+    <div class="stage mirror" id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="gl" class="gl"></canvas>
+      <canvas id="overlay" class="overlay"></canvas>
+    </div>
+    <pre class="hud" id="hud"></pre>
+    <div class="status" id="status">Loading…</div>
+    <div class="bar">
+      <button id="start">Start camera</button>
+      <button id="switch" disabled>Switch camera</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <script type="module" src="./tryon.ts"></script>
+  </body>
+</html>

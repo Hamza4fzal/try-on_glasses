@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => ({
       input: {
         index: resolve(__dirname, 'index.html'),
         tracking: resolve(__dirname, 'demo/tracking.html'),
+        tryon: resolve(__dirname, 'demo/tryon.html'),
+        viewer: resolve(__dirname, 'demo/viewer.html'),
       },
     },
   },
